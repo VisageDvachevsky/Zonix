@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import Any
+
 from app.config import settings
 from app.database import connect
 from app.security import hash_password
@@ -7,6 +10,7 @@ def ensure_bootstrap_admin(
     username: str | None = None,
     password: str | None = None,
     database_url: str | None = None,
+    connect_fn: Callable[[str | None], Any] = connect,
 ) -> bool:
     resolved_username = username or settings.bootstrap_admin_username
     resolved_password = password or settings.bootstrap_admin_password
@@ -18,7 +22,7 @@ def ensure_bootstrap_admin(
 
     password_hash = hash_password(resolved_password)
 
-    with connect(database_url or settings.database_url) as connection:
+    with connect_fn(database_url or settings.database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT username FROM users WHERE username = %s",

@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections.abc import Mapping
+from dataclasses import dataclass
+from hashlib import sha256
+from hmac import compare_digest
+from hmac import new as hmac_new
+from json import dumps, loads
+from time import time
+from typing import Protocol
+
+from app.config import settings
+from app.database import connect
+from app.domain.models import Role, User
+from app.security import verify_password
+
+
+class UserRepository(Protocol):
+    def get_by_username(self, username: str) -> UserRecord | None: ...
+
+
+@dataclass(frozen=True)
+class UserRecord:
+    username: str
+    password_hash: str
+    role: Role
+    auth_source: str
+    is_active: bool
+
+    def to_user(self) -> User:
+        return User(username=self.username, role=self.role)
+
+
+class DatabaseUserRepository:
+    def __init__(self, database_url: str | None = None) -> None:
+        self.database_url = database_url or settings.database_url
+
+    def get_by_username(self, username: str) -> UserRecord | None:
+        with connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT username, password_hash, role, auth_source, is_active
+                    FROM users
+                    WHERE username = %s
+                    """,
+                    (username,),
+                )
+                row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return UserRecord(
+            username=row[0],
+            password_hash=row[1],
+            role=Role(row[2]),
+            auth_source=row[3],
+            is_active=bool(row[4]),
+        )
+
+
+class InMemoryUserRepository:
+    def __init__(self, users: Mapping[str, Mapping[str, object]] | None = None) -> None:
+        self._users: dict[str, UserRecord] = {}
+
+        for username, payload in (users or {}).items():
+            self._users[username] = UserRecord(
+                username=str(payload["username"]),
+                password_hash=str(payload["password_hash"]),
+                role=Role(str(payload["role"])),
+                auth_source=str(payload["auth_source"]),
+                is_active=bool(payload["is_active"]),
+            )
+
+    def get_by_username(self, username: str) -> UserRecord | None:
+        return self._users.get(username)
+
+
+class SessionManager:
+    def __init__(
+        self,
+        secret_key: str,
+        session_ttl_seconds: int = 60 * 60 * 12,
+    ) -> None:
+        if not secret_key:
+            raise ValueError("session secret key must not be empty")
+        if session_ttl_seconds <= 0:
+            raise ValueError("session ttl must be positive")
+
+        self.secret_key = secret_key.encode("utf-8")
+        self.session_ttl_seconds = session_ttl_seconds
+
+    def create_session(self, user: User) -> str:
+        payload = {
+            "sub": user.username,
+            "role": user.role.value,
+            "exp": int(time()) + self.session_ttl_seconds,
+        }
+        encoded_payload = self._encode_json(payload)
+        signature = self._sign(encoded_payload)
+        return f"{encoded_payload}.{signature}"
+
+    def read_session(self, session_token: str | None) -> User | None:
+        if not session_token or "." not in session_token:
+            return None
+
+        try:
+            encoded_payload, signature = session_token.split(".", maxsplit=1)
+            expected_signature = self._sign(encoded_payload)
+            if not compare_digest(signature, expected_signature):
+                return None
+
+            payload = self._decode_json(encoded_payload)
+            if int(payload["exp"]) < int(time()):
+                return None
+
+            return User(username=str(payload["sub"]), role=Role(str(payload["role"])))
+        except KeyError, TypeError, ValueError:
+            return None
+
+    def _sign(self, encoded_payload: str) -> str:
+        digest = hmac_new(self.secret_key, encoded_payload.encode("ascii"), sha256).digest()
+        return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _encode_json(payload: dict[str, object]) -> str:
+        raw = dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        return urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_json(encoded_payload: str) -> dict[str, object]:
+        padding = "=" * (-len(encoded_payload) % 4)
+        raw = urlsafe_b64decode(f"{encoded_payload}{padding}".encode("ascii"))
+        payload = loads(raw.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("session payload must be an object")
+        return payload
+
+
+class AuthService:
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        session_manager: SessionManager,
+    ) -> None:
+        self.user_repository = user_repository
+        self.session_manager = session_manager
+
+    def authenticate_local_user(self, username: str, password: str) -> User | None:
+        user_record = self.user_repository.get_by_username(username)
+        if user_record is None or not user_record.is_active:
+            return None
+        if user_record.auth_source != "local":
+            return None
+        if not verify_password(password, user_record.password_hash):
+            return None
+        return user_record.to_user()
+
+    def create_session(self, user: User) -> str:
+        return self.session_manager.create_session(user)
+
+    def get_authenticated_user(self, session_token: str | None) -> User | None:
+        session_user = self.session_manager.read_session(session_token)
+        if session_user is None:
+            return None
+
+        user_record = self.user_repository.get_by_username(session_user.username)
+        if user_record is None or not user_record.is_active:
+            return None
+
+        return user_record.to_user()

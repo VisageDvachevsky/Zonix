@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev:frontend": "npm --prefix frontend run dev",
-    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload",
+    "dev:backend": "cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8010",
     "lint": "npm run lint:frontend && npm run lint:backend",
     "lint:frontend": "npm --prefix frontend run lint",
     "lint:backend": "python -m ruff check backend",

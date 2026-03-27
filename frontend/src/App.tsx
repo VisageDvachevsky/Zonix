@@ -1,32 +1,113 @@
-import { useQuery } from "@tanstack/react-query";
+import { FormEvent, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchHealth } from "./api";
+import {
+  fetchBackends,
+  fetchHealth,
+  fetchSession,
+  fetchZone,
+  fetchZoneRecords,
+  fetchZones,
+  login,
+  logout,
+} from "./api";
 import "./styles.css";
 
-const stackCards = [
-  {
-    title: "Frontend",
-    value: "React + TS",
-    detail: "TanStack Query and Zod drive API contracts from day zero.",
-  },
-  {
-    title: "Backend",
-    value: "FastAPI",
-    detail: "Health, readiness, migrations, bootstrap admin, and OpenAPI baseline.",
-  },
-  {
-    title: "Adapters",
-    value: "2 tracks",
-    detail: "PowerDNS first, RFC2136/BIND-compatible with explicit capability flags.",
-  },
-];
-
 export function App() {
+  const queryClient = useQueryClient();
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("admin");
+  const [selectedZoneName, setSelectedZoneName] = useState<string | null>(null);
+
   const healthQuery = useQuery({
     queryKey: ["health"],
     queryFn: fetchHealth,
     retry: false,
   });
+  const sessionQuery = useQuery({
+    queryKey: ["session"],
+    queryFn: fetchSession,
+    retry: false,
+  });
+  const backendsQuery = useQuery({
+    queryKey: ["backends"],
+    queryFn: fetchBackends,
+    enabled: sessionQuery.data?.authenticated === true,
+    retry: false,
+  });
+  const zonesQuery = useQuery({
+    queryKey: ["zones"],
+    queryFn: fetchZones,
+    enabled: sessionQuery.data?.authenticated === true,
+    retry: false,
+  });
+  const zoneDetailQuery = useQuery({
+    queryKey: ["zone", selectedZoneName],
+    queryFn: () => fetchZone(selectedZoneName as string),
+    enabled:
+      sessionQuery.data?.authenticated === true && selectedZoneName !== null,
+    retry: false,
+  });
+  const zoneRecordsQuery = useQuery({
+    queryKey: ["zone-records", selectedZoneName],
+    queryFn: () => fetchZoneRecords(selectedZoneName as string),
+    enabled:
+      sessionQuery.data?.authenticated === true && selectedZoneName !== null,
+    retry: false,
+  });
+
+  const loginMutation = useMutation({
+    mutationFn: login,
+    onSuccess: async (session) => {
+      queryClient.setQueryData(["session"], session);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["backends"] }),
+        queryClient.invalidateQueries({ queryKey: ["zones"] }),
+      ]);
+    },
+  });
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onSuccess: async (session) => {
+      queryClient.setQueryData(["session"], session);
+      queryClient.removeQueries({ queryKey: ["backends"] });
+      queryClient.removeQueries({ queryKey: ["zones"] });
+      queryClient.removeQueries({ queryKey: ["zone"] });
+      queryClient.removeQueries({ queryKey: ["zone-records"] });
+      setSelectedZoneName(null);
+      await queryClient.invalidateQueries({ queryKey: ["session"] });
+    },
+  });
+
+  function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    loginMutation.mutate({ username, password });
+  }
+
+  const session = sessionQuery.data;
+  const isAuthenticated =
+    session?.authenticated === true && session.user !== null;
+  const currentUser = isAuthenticated ? session.user : null;
+  const zoneItems = zonesQuery.data?.items;
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSelectedZoneName(null);
+      return;
+    }
+
+    if (!zoneItems || zoneItems.length === 0) {
+      setSelectedZoneName(null);
+      return;
+    }
+
+    if (
+      !selectedZoneName ||
+      !zoneItems.some((zone) => zone.name === selectedZoneName)
+    ) {
+      setSelectedZoneName(zoneItems[0].name);
+    }
+  }, [isAuthenticated, selectedZoneName, zoneItems]);
 
   return (
     <main className="app-shell">
@@ -35,23 +116,69 @@ export function App() {
 
       <section className="hero-shell">
         <section className="hero-copy">
-          <p className="eyebrow">Zonix v0.1</p>
-          <h1>Operate DNS without tab-hopping or blind writes.</h1>
+          <p className="eyebrow">Zonix Day 10</p>
+          <h1>
+            {isAuthenticated
+              ? "Real PowerDNS reads are live."
+              : "Sign in to Zonix."}
+          </h1>
           <p className="lede">
-            The shell already sets the tone: backend-agnostic capability modeling, verified API
-            contracts, and a launch path toward a serious DNS control plane.
+            {isAuthenticated
+              ? "The first live backend demo is in place: local login, session cookie, PowerDNS zone listing, zone detail, and normalized record inventory through the control plane."
+              : "Authenticate with the bootstrap admin, then inspect live PowerDNS-backed zones and record sets through the backend-agnostic API."}
           </p>
 
-          <div className="hero-actions">
-            <div className="inline-stat">
-              <span className="inline-stat-label">Scope</span>
-              <strong>Frozen for MVP</strong>
+          {isAuthenticated ? (
+            <div className="hero-actions">
+              <div className="inline-stat">
+                <span className="inline-stat-label">Signed in as</span>
+                <strong>{currentUser?.username}</strong>
+              </div>
+              <div className="inline-stat">
+                <span className="inline-stat-label">Role</span>
+                <strong>{currentUser?.role}</strong>
+              </div>
+              <button
+                className="primary-button secondary-button"
+                onClick={() => logoutMutation.mutate()}
+                type="button"
+              >
+                Sign out
+              </button>
             </div>
-            <div className="inline-stat">
-              <span className="inline-stat-label">Demo target</span>
-              <strong>PowerDNS + RFC2136</strong>
-            </div>
-          </div>
+          ) : (
+            <form className="login-form" onSubmit={handleLoginSubmit}>
+              <label>
+                <span>Username</span>
+                <input
+                  autoComplete="username"
+                  name="username"
+                  onChange={(event) => setUsername(event.target.value)}
+                  value={username}
+                />
+              </label>
+              <label>
+                <span>Password</span>
+                <input
+                  autoComplete="current-password"
+                  name="password"
+                  onChange={(event) => setPassword(event.target.value)}
+                  type="password"
+                  value={password}
+                />
+              </label>
+              <button
+                className="primary-button"
+                disabled={loginMutation.isPending}
+                type="submit"
+              >
+                Sign in
+              </button>
+              {loginMutation.isError ? (
+                <p className="status-error">Invalid username or password.</p>
+              ) : null}
+            </form>
+          )}
         </section>
 
         <aside className="status-panel">
@@ -59,7 +186,9 @@ export function App() {
             <span className="status-kicker">System pulse</span>
             <span
               className={`status-dot ${
-                healthQuery.data?.status === "ok" ? "status-dot-live" : "status-dot-muted"
+                healthQuery.data?.status === "ok"
+                  ? "status-dot-live"
+                  : "status-dot-muted"
               }`}
             />
           </div>
@@ -67,7 +196,8 @@ export function App() {
           {healthQuery.isLoading ? <p>Checking API health...</p> : null}
           {healthQuery.isError ? (
             <p className="status-error">
-              Backend unavailable. Start the compose stack or `npm run dev:backend`.
+              Backend unavailable. Start the compose stack or `npm run
+              dev:backend`.
             </p>
           ) : null}
           {healthQuery.data ? (
@@ -94,41 +224,127 @@ export function App() {
       </section>
 
       <section className="marquee">
-        <span>Capability matrix</span>
-        <span>Compose bootstrap</span>
-        <span>Audit-ready foundation</span>
-        <span>Typed frontend contracts</span>
-        <span>PowerDNS and RFC2136 track</span>
+        <span>Local auth</span>
+        <span>Session cookie</span>
+        <span>PowerDNS read-only adapter</span>
+        <span>Zone detail</span>
+        <span>Record inventory</span>
+        <span>First live backend demo</span>
       </section>
 
       <section className="grid">
         <article className="panel panel-story">
-          <p className="panel-label">Launch posture</p>
-          <h2>Built like an operations product, not a landing page.</h2>
+          <p className="panel-label">Configured backends</p>
+          <h2>What the current identity can reach.</h2>
           <p>
-            The first screen should already communicate confidence: clear system pulse, adapter
-            honesty, and a structure that can grow into zones, records, audit, and admin flows.
+            Day 10 keeps the UI on core models, but the data now comes from a
+            live read-only PowerDNS adapter instead of the mock registry.
           </p>
+          {isAuthenticated ? (
+            <ul className="resource-list">
+              {backendsQuery.data?.items.map((backend) => (
+                <li key={backend.name}>
+                  <div className="resource-copy">
+                    <strong>{backend.name}</strong>
+                    <span>{backend.backendType}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="placeholder-copy">
+              Sign in to load configured backends.
+            </p>
+          )}
         </article>
 
         <article className="panel panel-roadmap">
-          <p className="panel-label">Immediate runway</p>
-          <ul className="delivery-list">
-            <li>Local auth skeleton on top of bootstrap admin and migrations.</li>
-            <li>Backend registry, zone grants, and first protected list flows.</li>
-            <li>Real PowerDNS read path replacing placeholder shell content.</li>
-          </ul>
+          <p className="panel-label">Accessible zones</p>
+          <h2>Scoped by current role and grants.</h2>
+          {isAuthenticated ? (
+            <ul className="resource-list">
+              {(zoneItems ?? []).map((zone) => (
+                <li key={zone.name} className="resource-item-action">
+                  <div className="resource-copy">
+                    <strong>{zone.name}</strong>
+                    <span>{zone.backendName}</span>
+                  </div>
+                  <button
+                    className="primary-button secondary-button"
+                    onClick={() => setSelectedZoneName(zone.name)}
+                    type="button"
+                  >
+                    Inspect
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="placeholder-copy">
+              Zone visibility appears after login.
+            </p>
+          )}
         </article>
-      </section>
 
-      <section className="card-grid">
-        {stackCards.map((card) => (
-          <article key={card.title} className="stack-card">
-            <p className="panel-label">{card.title}</p>
-            <h3>{card.value}</h3>
-            <p>{card.detail}</p>
-          </article>
-        ))}
+        <article className="panel panel-roadmap">
+          <p className="panel-label">Zone detail</p>
+          <h2>{zoneDetailQuery.data?.name ?? "Pick a zone to inspect."}</h2>
+          {isAuthenticated && selectedZoneName === null ? (
+            <p className="placeholder-copy">
+              Choose a zone from the live list.
+            </p>
+          ) : null}
+          {zoneDetailQuery.isError ? (
+            <p className="status-error">
+              Zone detail could not be loaded from the backend.
+            </p>
+          ) : null}
+          {zoneDetailQuery.data ? (
+            <dl className="status-list">
+              <div>
+                <dt>Zone</dt>
+                <dd>{zoneDetailQuery.data.name}</dd>
+              </div>
+              <div>
+                <dt>Backend</dt>
+                <dd>{zoneDetailQuery.data.backendName}</dd>
+              </div>
+              <div>
+                <dt>Records</dt>
+                <dd>{zoneRecordsQuery.data?.items.length ?? 0}</dd>
+              </div>
+            </dl>
+          ) : null}
+        </article>
+
+        <article className="panel panel-story">
+          <p className="panel-label">Record sets</p>
+          <h2>Normalized RRsets, not PowerDNS payloads.</h2>
+          {zoneRecordsQuery.isError ? (
+            <p className="status-error">
+              Record inventory could not be loaded from the backend.
+            </p>
+          ) : null}
+          {zoneRecordsQuery.data ? (
+            <ul className="resource-list">
+              {zoneRecordsQuery.data.items.map((record) => (
+                <li key={`${record.name}-${record.recordType}`} className="record-item">
+                  <div className="resource-copy">
+                    <strong>
+                      {record.name} {record.recordType}
+                    </strong>
+                    <span>TTL {record.ttl}</span>
+                  </div>
+                  <p className="record-values">{record.values.join(", ")}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="placeholder-copy">
+              Record sets appear after selecting a zone.
+            </p>
+          )}
+        </article>
       </section>
     </main>
   );

@@ -1,0 +1,6 @@
+$TTL 300
+@ IN SOA ns1.internal.example. hostmaster.internal.example. 2026032701 3600 600 1209600 300
+@ IN NS ns1.internal.example.
+ns1 IN A 198.51.100.53
+registry IN A 198.51.100.25
+txt IN TXT "zonix-day-10"
