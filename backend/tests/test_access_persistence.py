@@ -59,9 +59,11 @@ class InMemoryAccessCursor:
         ):
             name = str(arguments[0])
             backend = self.connection.backends.get(name)
-            self._rows = [] if backend is None else [
-                (backend["name"], backend["backend_type"], backend["capabilities"])
-            ]
+            self._rows = (
+                []
+                if backend is None
+                else [(backend["name"], backend["backend_type"], backend["capabilities"])]
+            )
             return
 
         if normalized.startswith(

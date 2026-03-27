@@ -28,8 +28,7 @@ class PowerDNSReadAdapterTests(unittest.TestCase):
                         "records": [
                             {
                                 "content": (
-                                    "ns1.example.com hostmaster.example.com "
-                                    "1 3600 600 1209600 3600"
+                                    "ns1.example.com hostmaster.example.com 1 3600 600 1209600 3600"
                                 ),
                                 "disabled": False,
                             }

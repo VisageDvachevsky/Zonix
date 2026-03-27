@@ -82,15 +82,9 @@ class InMemoryZoneRepository:
 
     def replace_for_backend(self, backend_name: str, zones: Iterable[Zone]) -> tuple[Zone, ...]:
         retained = {
-            name: zone
-            for name, zone in self.zones.items()
-            if zone.backend_name != backend_name
+            name: zone for name, zone in self.zones.items() if zone.backend_name != backend_name
         }
-        synchronized = {
-            zone.name: zone
-            for zone in zones
-            if zone.backend_name == backend_name
-        }
+        synchronized = {zone.name: zone for zone in zones if zone.backend_name == backend_name}
         retained.update(synchronized)
         self.zones = retained
         return tuple(sorted(synchronized.values(), key=lambda zone: zone.name))
@@ -214,11 +208,7 @@ class DatabaseZoneRepository:
     def replace_for_backend(self, backend_name: str, zones: Iterable[Zone]) -> tuple[Zone, ...]:
         synchronized_zones = tuple(
             sorted(
-                (
-                    zone
-                    for zone in zones
-                    if zone.backend_name == backend_name
-                ),
+                (zone for zone in zones if zone.backend_name == backend_name),
                 key=lambda zone: zone.name,
             )
         )
@@ -366,10 +356,7 @@ class AccessService:
         if self.backend_repository.get_by_name(backend_name) is None:
             raise ValueError(f"backend '{backend_name}' is not registered")
 
-        normalized_zones = tuple(
-            Zone(name=zone.name, backend_name=backend_name)
-            for zone in zones
-        )
+        normalized_zones = tuple(Zone(name=zone.name, backend_name=backend_name) for zone in zones)
         return self.zone_repository.replace_for_backend(backend_name, normalized_zones)
 
     def assign_zone_grant(

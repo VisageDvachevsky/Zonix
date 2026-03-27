@@ -114,10 +114,7 @@ class MockApiTests(unittest.TestCase):
                         name="@",
                         record_type="SOA",
                         ttl=3600,
-                        values=(
-                            "ns1.example.com hostmaster.example.com "
-                            "1 3600 600 1209600 3600",
-                        ),
+                        values=("ns1.example.com hostmaster.example.com 1 3600 600 1209600 3600",),
                     ),
                     RecordSet(
                         zone_name="example.com",

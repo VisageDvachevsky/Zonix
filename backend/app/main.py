@@ -122,7 +122,7 @@ def initialize_default_runtime(
             zone_read_service,
             settings.powerdns_backend_name,
         )
-    except (UpstreamReadError, ZoneAdapterNotConfiguredError):
+    except UpstreamReadError, ZoneAdapterNotConfiguredError:
         pass
 
 

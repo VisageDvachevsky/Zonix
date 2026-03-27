@@ -328,7 +328,10 @@ export function App() {
           {zoneRecordsQuery.data ? (
             <ul className="resource-list">
               {zoneRecordsQuery.data.items.map((record) => (
-                <li key={`${record.name}-${record.recordType}`} className="record-item">
+                <li
+                  key={`${record.name}-${record.recordType}`}
+                  className="record-item"
+                >
                   <div className="resource-copy">
                     <strong>
                       {record.name} {record.recordType}
