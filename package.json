@@ -1,0 +1,16 @@
+{
+  "name": "zonix",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload",
+    "test:repo": "node tests/run.mjs",
+    "test:backend": "cd backend && python -m unittest discover -s tests -p \"test_*.py\"",
+    "test": "npm run test:repo && npm run test:backend"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

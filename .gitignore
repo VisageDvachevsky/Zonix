@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+.DS_Store
+dist/
+.env
+.venv/
+*.log
+mitm_mcp_traffic.db
+plan.txt
