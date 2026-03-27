@@ -39,9 +39,9 @@ test("repository contains a backend capability matrix for day 3", () => {
 });
 
 test("fixed stack is documented in the delivery plan", () => {
-  const plan = readFileSync(join(repoRoot, "plan.txt"), "utf8");
-  assert.match(plan, /React \+ TypeScript \+ TanStack Query \+ Zod/);
-  assert.match(plan, /FastAPI \+ Pydantic/);
+  const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+  assert.match(readme, /React \+ TypeScript \+ TanStack Query \+ Zod/);
+  assert.match(readme, /FastAPI \+ Pydantic/);
 });
 
 test("backend project is configured around FastAPI and Pydantic", () => {
