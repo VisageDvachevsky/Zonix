@@ -31,6 +31,13 @@ test("repository contains a dedicated domain model document for day 2", () => {
   assert.equal(existsSync(join(repoRoot, "docs", "domain-model-v0.1.md")), true);
 });
 
+test("repository contains a backend capability matrix for day 3", () => {
+  assert.equal(
+    existsSync(join(repoRoot, "docs", "backend-capability-matrix-v0.1.md")),
+    true,
+  );
+});
+
 test("fixed stack is documented in the delivery plan", () => {
   const plan = readFileSync(join(repoRoot, "plan.txt"), "utf8");
   assert.match(plan, /React \+ TypeScript \+ TanStack Query \+ Zod/);
@@ -52,6 +59,28 @@ test("frontend workspace is configured around React, TypeScript, TanStack Query,
 
 test("python backend entrypoint exists", () => {
   assert.equal(existsSync(join(repoRoot, "backend", "app", "main.py")), true);
+});
+
+test("day 4 engineering guardrails exist", () => {
+  for (const relativePath of [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml",
+    "frontend/eslint.config.js",
+    ".prettierrc.json",
+  ]) {
+    assert.equal(existsSync(join(repoRoot, relativePath)), true, `expected ${relativePath} to exist`);
+  }
+});
+
+test("day 5 local development stack exists", () => {
+  for (const relativePath of [
+    "deploy/docker-compose.yml",
+    "docs/quickstart.md",
+    "backend/migrations/0001_initial.sql",
+    "backend/app/bootstrap.py",
+  ]) {
+    assert.equal(existsSync(join(repoRoot, relativePath)), true, `expected ${relativePath} to exist`);
+  }
 });
 
 test("prd freezes day 1 scope around users, use cases, scope, and exclusions", () => {
@@ -78,6 +107,55 @@ test("domain model document enumerates all required core entities", () => {
   ]) {
     assert.match(domainModel, new RegExp(`### ${entity}`));
   }
+});
+
+test("backend capability matrix documents the v0.1 adapter contract", () => {
+  const capabilityMatrix = readFileSync(
+    join(repoRoot, "docs", "backend-capability-matrix-v0.1.md"),
+    "utf8",
+  );
+  for (const capability of [
+    "readZones",
+    "readRecords",
+    "writeRecords",
+    "discoverZones",
+    "importSnapshot",
+    "commentsMetadata",
+    "axfr",
+    "rfc2136Update",
+  ]) {
+    assert.match(capabilityMatrix, new RegExp(capability));
+  }
+  assert.match(capabilityMatrix, /powerdns/);
+  assert.match(capabilityMatrix, /rfc2136-bind/);
+});
+
+test("root scripts expose lint, format, migrate, bootstrap, and compose workflows", () => {
+  const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+  for (const scriptName of [
+    "lint",
+    "format",
+    "format:check",
+    "migrate",
+    "bootstrap:admin",
+    "compose:up",
+  ]) {
+    assert.equal(packageJson.scripts[scriptName] !== undefined, true, `missing script ${scriptName}`);
+  }
+});
+
+test("frontend shell is wired through TanStack Query and zod contracts", () => {
+  const appSource = readFileSync(join(repoRoot, "frontend", "src", "App.tsx"), "utf8");
+  const apiSource = readFileSync(join(repoRoot, "frontend", "src", "api.ts"), "utf8");
+  assert.match(appSource, /useQuery/);
+  assert.match(apiSource, /z\.object/);
+});
+
+test("compose stack includes postgres, backend, and frontend services", () => {
+  const compose = readFileSync(join(repoRoot, "deploy", "docker-compose.yml"), "utf8");
+  assert.match(compose, /postgres:/);
+  assert.match(compose, /backend:/);
+  assert.match(compose, /frontend:/);
 });
 
 let failed = 0;

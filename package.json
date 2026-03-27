@@ -6,9 +6,23 @@
   "scripts": {
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "cd backend && uv run uvicorn app.main:app --reload",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "lint:backend": "python -m ruff check backend",
+    "format": "npm run format:frontend && npm run format:backend",
+    "format:frontend": "npm --prefix frontend run format",
+    "format:backend": "python -m ruff format backend",
+    "format:check": "npm run format:check:frontend && npm run format:check:backend",
+    "format:check:frontend": "npm --prefix frontend run format:check",
+    "format:check:backend": "python -m ruff format --check backend",
+    "bootstrap:admin": "cd backend && python -m app.bootstrap",
+    "migrate": "cd backend && python -m app.migrations",
+    "compose:up": "docker compose -f deploy/docker-compose.yml up --build",
+    "compose:down": "docker compose -f deploy/docker-compose.yml down -v",
     "test:repo": "node tests/run.mjs",
     "test:backend": "cd backend && python -m unittest discover -s tests -p \"test_*.py\"",
-    "test": "npm run test:repo && npm run test:backend"
+    "test:frontend": "npm --prefix frontend run test",
+    "test": "npm run test:repo && npm run test:backend && npm run test:frontend"
   },
   "engines": {
     "node": ">=24.0.0"

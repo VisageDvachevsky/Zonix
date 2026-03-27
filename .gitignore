@@ -4,6 +4,13 @@ coverage/
 dist/
 .env
 .venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+*.pyc
+frontend/.vite/
+frontend/node_modules/
 *.log
 mitm_mcp_traffic.db
 plan.txt

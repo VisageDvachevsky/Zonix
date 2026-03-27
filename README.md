@@ -9,11 +9,14 @@ Zonix is a DNS control plane for small infrastructure teams that need a safe UI 
 
 ## Current status
 
-The repository is at the initial implementation stage. The first iteration establishes:
+The repository is at the initial implementation stage. Days 1-5 now establish:
 
 - frozen v0.1 scope
+- backend capability matrix
 - monorepo structure
 - backend core domain model
+- frontend shell with TanStack Query + Zod contract validation
+- migrations, bootstrap admin flow, and Docker Compose local stack
 - TDD baseline with executable tests
 
 ## Monorepo layout
@@ -32,4 +35,17 @@ Run the current test suite:
 npm test
 ```
 
-The project currently uses Node's built-in test runner to avoid premature tooling decisions while the architecture is still being fixed.
+Lint and format checks:
+
+```bash
+npm run lint
+npm run format:check
+```
+
+Start the local stack:
+
+```bash
+npm run compose:up
+```
+
+Quickstart details live in [`docs/quickstart.md`](docs/quickstart.md).

@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.1
+    hooks:
+      - id: ruff-check
+        args: ["backend"]
+      - id: ruff-format
+        args: ["backend"]
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.39.1
+    hooks:
+      - id: eslint
+        files: ^frontend/.*\.(ts|tsx)$
+        additional_dependencies:
+          - eslint@9.39.1
+          - @eslint/js@9.39.1
+          - typescript-eslint@8.46.3
+          - eslint-plugin-react-hooks@5.2.0
+          - eslint-plugin-react-refresh@0.4.24
+          - globals@16.5.0
+          - typescript@5.9.3
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^(frontend|docs|deploy|\.github)/.*\.(ts|tsx|json|md|yml|yaml|css|html)$

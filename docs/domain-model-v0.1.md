@@ -120,6 +120,7 @@ Core fields:
 - `writeRecords`
 - `discoverZones`
 - `importSnapshot`
+- `commentsMetadata`
 - `axfr`
 - `rfc2136Update`
 

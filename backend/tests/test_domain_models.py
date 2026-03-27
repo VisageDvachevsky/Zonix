@@ -33,6 +33,7 @@ class DomainModelTests(unittest.TestCase):
                 "writeRecords",
                 "discoverZones",
                 "importSnapshot",
+                "commentsMetadata",
                 "axfr",
                 "rfc2136Update",
             ],

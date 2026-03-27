@@ -21,6 +21,7 @@ class BackendCapability(StrEnum):
     WRITE_RECORDS = "writeRecords"
     DISCOVER_ZONES = "discoverZones"
     IMPORT_SNAPSHOT = "importSnapshot"
+    COMMENTS_METADATA = "commentsMetadata"
     AXFR = "axfr"
     RFC2136_UPDATE = "rfc2136Update"
 

@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: zonix
+      POSTGRES_USER: zonix
+      POSTGRES_PASSWORD: zonix
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ../backend
+    environment:
+      ZONIX_ENV: development
+      ZONIX_DATABASE_URL: postgresql://zonix:zonix@postgres:5432/zonix
+      ZONIX_BOOTSTRAP_ADMIN_USERNAME: admin
+      ZONIX_BOOTSTRAP_ADMIN_PASSWORD: admin
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:
