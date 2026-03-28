@@ -14,6 +14,9 @@ def ensure_bootstrap_admin(
     database_url: str | None = None,
     connect_fn: Callable[[str | None], Any] = connect,
 ) -> bool:
+    if not settings.bootstrap_admin_enabled:
+        return False
+
     resolved_username = username or settings.bootstrap_admin_username
     resolved_password = password or settings.bootstrap_admin_password
 
@@ -105,10 +108,12 @@ def ensure_bootstrap_oidc_provider(
 
 def main() -> None:
     created = ensure_bootstrap_admin()
-    if created:
+    if settings.bootstrap_admin_enabled and created:
         print(f"Bootstrap admin '{settings.bootstrap_admin_username}' created")
-    else:
+    elif settings.bootstrap_admin_enabled:
         print(f"Bootstrap admin '{settings.bootstrap_admin_username}' already exists")
+    else:
+        print("Bootstrap admin provisioning is disabled")
 
     oidc_bootstrapped = ensure_bootstrap_oidc_provider()
     if oidc_bootstrapped:

@@ -11,9 +11,11 @@ class SettingsTests(unittest.TestCase):
             "ZONIX_ENV": "development",
             "ZONIX_DATABASE_URL": "postgresql://zonix:zonix@127.0.0.1:55432/zonix",
             "ZONIX_BOOTSTRAP_ADMIN_USERNAME": "admin",
-            "ZONIX_BOOTSTRAP_ADMIN_PASSWORD": "admin",
+            "ZONIX_BOOTSTRAP_ADMIN_PASSWORD": "local-dev-admin-change-me",
             "ZONIX_SESSION_COOKIE_NAME": "zonix_session",
-            "ZONIX_SESSION_SECRET_KEY": "zonix-dev-session-secret",
+            "ZONIX_SESSION_COOKIE_SAMESITE": "lax",
+            "ZONIX_SESSION_COOKIE_SECURE": "false",
+            "ZONIX_SESSION_SECRET_KEY": "local-dev-session-secret-change-me-32-bytes",
             "ZONIX_SESSION_TTL_SECONDS": "43200",
         }
 
@@ -52,10 +54,27 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.environment, "development")
         self.assertEqual(settings.session_ttl_seconds, 43200)
+        self.assertEqual(settings.session_cookie_samesite, "lax")
+        self.assertFalse(settings.session_cookie_secure)
         self.assertEqual(
             settings.database_url,
             "postgresql://zonix:zonix@127.0.0.1:55432/zonix",
         )
+
+    def test_same_site_none_requires_secure_cookie(self) -> None:
+        env = self.base_env | {
+            "ZONIX_SESSION_COOKIE_SAMESITE": "none",
+            "ZONIX_SESSION_COOKIE_SECURE": "false",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_SESSION_COOKIE_SECURE must be true when SameSite=None",
+            ):
+                Settings()
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from app.access import (
 from app.audit import AuditService, DatabaseAuditEventRepository
 from app.auth import (
     AuthIdentityConflictError,
+    AuthSelfSignupDisabledError,
     AuthService,
     DatabaseUserRepository,
     SessionManager,
@@ -40,20 +41,21 @@ from app.record_writes import (
     RecordAlreadyExistsError,
     RecordMutationResult,
     RecordNotFoundError,
+    RecordVersionConflictError,
     RecordWriteNotSupportedError,
     RecordWritePermissionError,
     RecordWriteService,
-    RecordVersionConflictError,
     record_version,
 )
 from app.schemas import (
-    AdminUserRoleRequest,
     AdminUserListResponse,
     AdminUserResponse,
+    AdminUserRoleRequest,
     AuditEventListResponse,
     AuditEventResponse,
     AuthenticatedUserResponse,
     AuthSessionResponse,
+    AuthSettingsResponse,
     BackendConfigListResponse,
     BackendConfigRequest,
     BackendListResponse,
@@ -68,8 +70,8 @@ from app.schemas import (
     OIDCLoginStartResponse,
     OIDCProviderListResponse,
     OIDCProviderResponse,
-    RecordDeleteRequest,
     ReadinessResponse,
+    RecordDeleteRequest,
     RecordListResponse,
     RecordSetRequest,
     RecordSetResponse,
@@ -103,39 +105,45 @@ CSRF_HEADER_NAME = "X-CSRF-Token"
 
 
 def set_auth_cookies(response: Response, session_token: str) -> None:
-    secure_cookie = settings.environment != "development"
     csrf_token = token_urlsafe(32)
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_token,
         httponly=True,
-        samesite="lax",
-        secure=secure_cookie,
+        samesite=settings.session_cookie_samesite,
+        secure=settings.session_cookie_secure,
+        domain=settings.session_cookie_domain,
+        path=settings.session_cookie_path,
         max_age=settings.session_ttl_seconds,
     )
     response.set_cookie(
         key=CSRF_COOKIE_NAME,
         value=csrf_token,
         httponly=False,
-        samesite="lax",
-        secure=secure_cookie,
+        samesite=settings.session_cookie_samesite,
+        secure=settings.session_cookie_secure,
+        domain=settings.session_cookie_domain,
+        path=settings.session_cookie_path,
         max_age=settings.session_ttl_seconds,
     )
 
 
 def clear_auth_cookies(response: Response) -> None:
-    secure_cookie = settings.environment != "development"
     response.delete_cookie(
         key=settings.session_cookie_name,
         httponly=True,
-        samesite="lax",
-        secure=secure_cookie,
+        samesite=settings.session_cookie_samesite,
+        secure=settings.session_cookie_secure,
+        domain=settings.session_cookie_domain,
+        path=settings.session_cookie_path,
     )
     response.delete_cookie(
         key=CSRF_COOKIE_NAME,
         httponly=False,
-        samesite="lax",
-        secure=secure_cookie,
+        samesite=settings.session_cookie_samesite,
+        secure=settings.session_cookie_secure,
+        domain=settings.session_cookie_domain,
+        path=settings.session_cookie_path,
     )
 
 
@@ -407,7 +415,9 @@ def change_set_response_from_change_set(change_set: ChangeSet) -> ChangeSetRespo
         zoneName=change_set.zone_name,
         backendName=change_set.backend_name,
         operation=change_set.operation,
-        before=None if change_set.before is None else record_response_from_record(change_set.before),
+        before=None
+        if change_set.before is None
+        else record_response_from_record(change_set.before),
         after=None if change_set.after is None else record_response_from_record(change_set.after),
         expectedVersion=change_set.expected_version,
         currentVersion=change_set.current_version,
@@ -432,6 +442,14 @@ def get_current_user(
 
 
 CurrentUserDependency = Annotated[AuthenticatedUserResponse, Depends(get_current_user)]
+
+
+def authenticated_user_from_request(
+    request: Request,
+    auth_service: AuthService,
+) -> User | None:
+    session_token = request.cookies.get(settings.session_cookie_name)
+    return auth_service.get_authenticated_user(session_token)
 
 
 def require_csrf(request: Request) -> None:
@@ -545,6 +563,11 @@ def create_app(
     ) -> AuthSessionResponse:
         user = auth_service.authenticate_local_user(payload.username, payload.password)
         if user is None:
+            audit_service.log_event(
+                actor=payload.username,
+                action="login.failed",
+                payload={"authSource": "local"},
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="invalid credentials",
@@ -563,9 +586,43 @@ def create_app(
         )
 
     @app.post("/auth/logout", response_model=AuthSessionResponse)
-    def logout(response: Response, _csrf: CsrfDependency) -> AuthSessionResponse:
+    def logout(
+        request: Request,
+        response: Response,
+        _csrf: CsrfDependency,
+        auth_service: AuthServiceDependency,
+        audit_service: AuditServiceDependency,
+    ) -> AuthSessionResponse:
+        user = authenticated_user_from_request(request, auth_service)
+        if user is not None:
+            user_record = auth_service.user_repository.get_by_username(user.username)
+            audit_service.log_event(
+                actor=user.username,
+                action="logout.success",
+                payload={"authSource": "local" if user_record is None else user_record.auth_source},
+            )
         clear_auth_cookies(response)
         return AuthSessionResponse(authenticated=False, user=None)
+
+    @app.get("/auth/settings", response_model=AuthSettingsResponse)
+    def auth_settings(
+        identity_provider_service: IdentityProviderServiceDependency,
+    ) -> AuthSettingsResponse:
+        oidc_enabled = any(
+            provider.kind == IdentityProviderKind.OIDC
+            for provider in identity_provider_service.list_providers()
+        )
+        return AuthSettingsResponse(
+            localLoginEnabled=True,
+            oidcEnabled=oidc_enabled,
+            oidcSelfSignupEnabled=settings.auth_oidc_self_signup_enabled,
+            csrfEnabled=True,
+            sessionCookieName=settings.session_cookie_name,
+            sessionCookieSameSite=settings.session_cookie_samesite,
+            sessionCookieSecure=settings.session_cookie_secure,
+            sessionTtlSeconds=settings.session_ttl_seconds,
+            bootstrapAdminEnabled=settings.bootstrap_admin_enabled,
+        )
 
     @app.get("/auth/oidc/providers", response_model=OIDCProviderListResponse)
     def list_oidc_providers(
@@ -578,7 +635,8 @@ def create_app(
         )
         return OIDCProviderListResponse(
             items=tuple(
-                OIDCProviderResponse(name=provider.name, kind=provider.kind) for provider in providers
+                OIDCProviderResponse(name=provider.name, kind=provider.kind)
+                for provider in providers
             )
         )
 
@@ -591,12 +649,16 @@ def create_app(
         try:
             login_request = oidc_service.begin_login(
                 provider_name=provider_name,
-                redirect_uri=str(request.url_for("complete_oidc_login", provider_name=provider_name)),
+                redirect_uri=str(
+                    request.url_for("complete_oidc_login", provider_name=provider_name)
+                ),
             )
         except OIDCProviderNotFoundError as error:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
         except OIDCExchangeError as error:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
+            ) from error
 
         return OIDCLoginStartResponse(
             providerName=login_request.provider_name,
@@ -620,14 +682,14 @@ def create_app(
                 provider_name=provider_name,
                 code=code,
                 state=state,
-                redirect_uri=str(request.url_for("complete_oidc_login", provider_name=provider_name)),
+                redirect_uri=str(
+                    request.url_for("complete_oidc_login", provider_name=provider_name)
+                ),
             )
             mapping = oidc_service.map_identity(
                 provider_name=provider_name,
                 identity=identity,
-                known_zones=tuple(
-                    zone.name for zone in access_service.zone_repository.list_all()
-                ),
+                known_zones=tuple(zone.name for zone in access_service.zone_repository.list_all()),
             )
             user = auth_service.provision_oidc_user(
                 username=identity.username,
@@ -642,13 +704,44 @@ def create_app(
                     grants=mapping.grants,
                 )
         except OIDCProviderNotFoundError as error:
+            audit_service.log_event(
+                actor="anonymous",
+                action="login.failed",
+                payload={"authSource": f"oidc:{provider_name}", "reason": str(error)},
+            )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
         except AuthIdentityConflictError as error:
+            audit_service.log_event(
+                actor=error.username,
+                action="login.failed",
+                payload={"authSource": error.auth_source, "reason": str(error)},
+            )
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        except AuthSelfSignupDisabledError as error:
+            audit_service.log_event(
+                actor=error.username,
+                action="login.failed",
+                payload={"authSource": error.auth_source, "reason": str(error)},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
         except OIDCExchangeError as error:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+            audit_service.log_event(
+                actor="anonymous",
+                action="login.failed",
+                payload={"authSource": f"oidc:{provider_name}", "reason": str(error)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
+            ) from error
         except RuntimeError as error:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+            audit_service.log_event(
+                actor="anonymous",
+                action="login.failed",
+                payload={"authSource": f"oidc:{provider_name}", "reason": str(error)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            ) from error
 
         session_token = auth_service.create_session(user)
         audit_service.log_event(
@@ -672,10 +765,7 @@ def create_app(
         auth_service: AuthServiceDependency,
     ) -> AdminUserListResponse:
         return AdminUserListResponse(
-            items=tuple(
-                admin_user_response_from_record(user)
-                for user in auth_service.list_users()
-            )
+            items=tuple(admin_user_response_from_record(user) for user in auth_service.list_users())
         )
 
     @app.put("/admin/users/{username}/role", response_model=AdminUserResponse)
@@ -830,10 +920,7 @@ def create_app(
     ) -> BackendListResponse:
         backends = access_service.list_accessible_backends(current_user)
         return BackendListResponse(
-            items=tuple(
-                backend_response_from_backend(backend)
-                for backend in backends
-            )
+            items=tuple(backend_response_from_backend(backend) for backend in backends)
         )
 
     @app.get("/zones", response_model=ZoneListResponse)
@@ -910,10 +997,7 @@ def create_app(
             ) from error
 
         return RecordListResponse(
-            items=tuple(
-                record_response_from_record(record)
-                for record in records
-            )
+            items=tuple(record_response_from_record(record) for record in records)
         )
 
     @app.post("/zones/{zone_name}/changes/preview", response_model=ChangeSetResponse)
@@ -956,7 +1040,9 @@ def create_app(
         except RecordWritePermissionError as error:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
         except RecordWriteNotSupportedError as error:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            ) from error
         except ZoneAdapterNotConfiguredError as error:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(error)
@@ -994,7 +1080,9 @@ def create_app(
         except RecordWritePermissionError as error:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
         except RecordWriteNotSupportedError as error:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            ) from error
         except RecordVersionConflictError as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except ZoneAdapterNotConfiguredError as error:
@@ -1042,7 +1130,9 @@ def create_app(
         except RecordWritePermissionError as error:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
         except RecordWriteNotSupportedError as error:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            ) from error
         except RecordVersionConflictError as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except ZoneAdapterNotConfiguredError as error:
@@ -1092,7 +1182,9 @@ def create_app(
         except RecordWritePermissionError as error:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
         except RecordWriteNotSupportedError as error:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            ) from error
         except RecordVersionConflictError as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except ZoneAdapterNotConfiguredError as error:

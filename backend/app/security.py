@@ -14,8 +14,12 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, encoded_hash: str) -> bool:
-    salt_b64, derived_key_b64 = encoded_hash.split("$", maxsplit=1)
-    salt = b64decode(salt_b64.encode("ascii"))
-    expected = b64decode(derived_key_b64.encode("ascii"))
+    try:
+        salt_b64, derived_key_b64 = encoded_hash.split("$", maxsplit=1)
+        salt = b64decode(salt_b64.encode("ascii"))
+        expected = b64decode(derived_key_b64.encode("ascii"))
+    except (ValueError, TypeError):
+        return False
+
     candidate = pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 600_000)
     return compare_digest(candidate, expected)

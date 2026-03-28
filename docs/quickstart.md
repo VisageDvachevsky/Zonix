@@ -30,7 +30,14 @@ The backend container runs SQL migrations and creates a bootstrap admin user on 
 
 Override them before exposing the stack anywhere outside your workstation. The local compose file and [`deploy/.env.example`](../deploy/.env.example) now use explicit development-only placeholders instead of `admin` / static session defaults baked into the backend.
 
-The backend reads `ZONIX_ENV`, `ZONIX_DATABASE_URL`, `ZONIX_BOOTSTRAP_ADMIN_USERNAME`, `ZONIX_BOOTSTRAP_ADMIN_PASSWORD`, `ZONIX_SESSION_SECRET_KEY`, `ZONIX_SESSION_TTL_SECONDS`, `ZONIX_POWERDNS_BACKEND_NAME`, `ZONIX_POWERDNS_API_URL`, `ZONIX_POWERDNS_API_KEY`, `ZONIX_POWERDNS_SERVER_ID`, and `ZONIX_POWERDNS_TIMEOUT_SECONDS`.
+The backend reads `ZONIX_ENV`, `ZONIX_DATABASE_URL`, `ZONIX_BOOTSTRAP_ADMIN_ENABLED`, `ZONIX_BOOTSTRAP_ADMIN_USERNAME`, `ZONIX_BOOTSTRAP_ADMIN_PASSWORD`, `ZONIX_SESSION_SECRET_KEY`, `ZONIX_SESSION_COOKIE_SAMESITE`, `ZONIX_SESSION_COOKIE_SECURE`, `ZONIX_SESSION_TTL_SECONDS`, `ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED`, `ZONIX_POWERDNS_BACKEND_NAME`, `ZONIX_POWERDNS_API_URL`, `ZONIX_POWERDNS_API_KEY`, `ZONIX_POWERDNS_SERVER_ID`, and `ZONIX_POWERDNS_TIMEOUT_SECONDS`.
+
+Day 20 hardening defaults in the demo stack:
+
+- bootstrap admin remains enabled in development and uses explicit dev-only credentials
+- cookie-authenticated write requests require CSRF
+- session cookies default to `SameSite=lax`
+- OIDC self-signup is disabled by default until richer user provisioning UX lands
 
 ## Local-only workflows without Docker
 
@@ -159,6 +166,12 @@ Audit is now available through the protected API and includes successful logins 
 ```bash
 curl -i http://localhost:8000/audit \
   -H "Cookie: zonix_session=<paste-cookie-value>"
+```
+
+Authentication settings are now exposed through a read-only endpoint for runtime inspection:
+
+```bash
+curl -i http://localhost:8000/auth/settings
 ```
 
 ## Day 15 demo flow

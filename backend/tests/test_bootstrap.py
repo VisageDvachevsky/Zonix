@@ -1,6 +1,8 @@
 import unittest
+from dataclasses import replace
+from unittest.mock import patch
 
-from app.bootstrap import ensure_bootstrap_admin, ensure_bootstrap_oidc_provider
+from app.bootstrap import ensure_bootstrap_admin, ensure_bootstrap_oidc_provider, settings
 from app.domain.models import IdentityProvider, IdentityProviderKind
 from app.security import verify_password
 
@@ -103,6 +105,22 @@ class BootstrapAdminTests(unittest.TestCase):
             connect_fn=connect_stub,
         )
         self.assertFalse(created_again)
+
+    def test_ensure_bootstrap_admin_respects_disabled_bootstrap_flag(self) -> None:
+        connection = InMemoryBootstrapConnection()
+
+        def connect_stub(_database_url: str | None = None) -> InMemoryBootstrapConnection:
+            return connection
+
+        with patch("app.bootstrap.settings", replace(settings, bootstrap_admin_enabled=False)):
+            created = ensure_bootstrap_admin(
+                username="admin",
+                password="admin",
+                connect_fn=connect_stub,
+            )
+
+        self.assertFalse(created)
+        self.assertEqual(connection.users, {})
 
     def test_ensure_bootstrap_oidc_provider_upserts_provider_configuration(self) -> None:
         connection = InMemoryBootstrapConnection()

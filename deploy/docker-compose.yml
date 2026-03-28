@@ -33,10 +33,14 @@ services:
     environment:
       ZONIX_ENV: development
       ZONIX_DATABASE_URL: postgresql://zonix:zonix@postgres:5432/zonix
+      ZONIX_BOOTSTRAP_ADMIN_ENABLED: "true"
       ZONIX_BOOTSTRAP_ADMIN_USERNAME: admin
       ZONIX_BOOTSTRAP_ADMIN_PASSWORD: local-dev-admin-change-me
       ZONIX_SESSION_SECRET_KEY: local-dev-session-secret-change-me-32-bytes
+      ZONIX_SESSION_COOKIE_SAMESITE: lax
+      ZONIX_SESSION_COOKIE_SECURE: "false"
       ZONIX_SESSION_TTL_SECONDS: 43200
+      ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED: "false"
       ZONIX_POWERDNS_BACKEND_NAME: powerdns-local
       ZONIX_POWERDNS_API_URL: http://powerdns:8081
       ZONIX_POWERDNS_API_KEY: zonix-dev-powerdns-key

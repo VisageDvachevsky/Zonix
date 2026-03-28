@@ -9,7 +9,7 @@ Zonix is a DNS control plane for small infrastructure teams that need a safe UI 
 
 ## Current status
 
-The repository now covers the Day 1-18 milestone path:
+The repository now covers the Day 1-20 milestone path:
 
 - frozen v0.1 scope, domain model, and backend capability matrix
 - React/FastAPI monorepo with CI, lint, format, and repository guardrails
@@ -25,12 +25,13 @@ The repository now covers the Day 1-18 milestone path:
 - `IdentityProvider` foundation for generic OIDC with issuer, client credentials, scopes, and claims-mapping configuration
 - generic OIDC login start/callback flow with signed state, token exchange, userinfo resolution, session issuance, and baseline viewer provisioning
 - OIDC claims/groups mapping into global role and zone-level grants during callback
+- hardened auth defaults with explicit session cookie settings, CSRF-protected cookie auth, login failure/logout audit events, disabled OIDC self-signup by default, and deterministic bootstrap admin defaults for development
 
 What is still intentionally incomplete:
 
-- backend/admin UX for managing IdP configs arrives in day 19
 - deeper PowerDNS integration beyond the day-15 flow remains for later milestones
 - sync is explicit and minimal today: startup attempts an initial zone import, and admins can trigger backend zone sync on demand
+- full user lifecycle management still lands later: day 20 disables self-signup, but richer user provisioning/admin UX is still planned for the RBAC UI milestone
 
 ## Monorepo layout
 

@@ -15,7 +15,6 @@ from app.domain.models import (
     Backend,
     IdentityProvider,
     IdentityProviderKind,
-    Role,
     User,
     Zone,
 )
@@ -95,6 +94,7 @@ class AuthApiTests(unittest.TestCase):
         auth_service = AuthService(
             user_repository=repository,
             session_manager=SessionManager(secret_key="test-secret"),
+            allow_oidc_self_signup=True,
         )
         identity_provider_service = IdentityProviderService(
             InMemoryIdentityProviderRepository(
@@ -130,9 +130,7 @@ class AuthApiTests(unittest.TestCase):
         access_service.register_backend(
             Backend(name="powerdns-local", backend_type="powerdns", capabilities=())
         )
-        access_service.register_zone(
-            Zone(name="example.com", backend_name="powerdns-local")
-        )
+        access_service.register_zone(Zone(name="example.com", backend_name="powerdns-local"))
         zone_read_service = ZoneReadService(
             access_service=access_service,
             adapters={"powerdns-local": InMemoryZoneReadAdapter()},
@@ -190,6 +188,15 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "invalid credentials")
         self.assertNotIn("zonix_session", response.cookies)
 
+        login_audit = self.client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "admin"},
+        )
+        self.assertEqual(login_audit.status_code, 200)
+        audit_response = self.client.get("/audit")
+        actions = [item["action"] for item in audit_response.json()["items"]]
+        self.assertIn("login.failed", actions)
+
     def test_logout_clears_session_cookie(self) -> None:
         self.client.post(
             "/auth/login",
@@ -205,6 +212,18 @@ class AuthApiTests(unittest.TestCase):
         me_response = self.client.get("/auth/me")
         self.assertEqual(me_response.status_code, 401)
         self.assertEqual(me_response.json()["detail"], "not authenticated")
+
+        self.client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "admin"},
+        )
+        self.client.post("/auth/logout", headers=self.csrf_headers())
+        self.client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "admin"},
+        )
+        audit_response = self.client.get("/audit")
+        self.assertIn("logout.success", [item["action"] for item in audit_response.json()["items"]])
 
     def test_me_requires_valid_session(self) -> None:
         response = self.client.get("/auth/me")
@@ -228,7 +247,9 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(list_response.json()["items"], [{"name": "corp-oidc", "kind": "oidc"}])
         self.assertEqual(start_response.status_code, 200)
         self.assertEqual(start_response.json()["providerName"], "corp-oidc")
-        self.assertIn("https://issuer.example/authorize?", start_response.json()["authorizationUrl"])
+        self.assertIn(
+            "https://issuer.example/authorize?", start_response.json()["authorizationUrl"]
+        )
 
     def test_oidc_callback_maps_groups_into_role_and_zone_access(self) -> None:
         start_response = self.client.get("/auth/oidc/corp-oidc/login")
@@ -253,18 +274,76 @@ class AuthApiTests(unittest.TestCase):
 
         zones_response = self.client.get("/zones")
         self.assertEqual(zones_response.status_code, 200)
-        self.assertEqual(zones_response.json()["items"], [{"name": "example.com", "backendName": "powerdns-local"}])
+        self.assertEqual(
+            zones_response.json()["items"],
+            [{"name": "example.com", "backendName": "powerdns-local"}],
+        )
 
         audit_response = self.client.get("/audit")
         self.assertEqual(audit_response.status_code, 200)
         self.assertEqual(audit_response.json()["items"][0]["actor"], "oidc.alice")
-        self.assertEqual(audit_response.json()["items"][0]["payload"]["authSource"], "oidc:corp-oidc")
+        self.assertEqual(
+            audit_response.json()["items"][0]["payload"]["authSource"], "oidc:corp-oidc"
+        )
 
     def test_oidc_callback_rejects_invalid_state(self) -> None:
         response = self.client.get("/auth/oidc/corp-oidc/callback?code=test-code&state=broken")
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("oidc state", response.json()["detail"])
+
+    def test_oidc_callback_rejects_unprovisioned_user_when_self_signup_disabled(self) -> None:
+        repository = InMemoryUserRepository(
+            {
+                "admin": {
+                    "username": "admin",
+                    "password_hash": hash_password("admin"),
+                    "role": "admin",
+                    "auth_source": "local",
+                    "is_active": True,
+                }
+            }
+        )
+        auth_service = AuthService(
+            user_repository=repository,
+            session_manager=SessionManager(secret_key="test-secret"),
+            allow_oidc_self_signup=False,
+        )
+        access_service = AccessService(
+            user_repository=SharedUserDirectory(repository),
+            backend_repository=InMemoryBackendRepository(),
+            zone_repository=InMemoryZoneRepository(),
+            grant_repository=InMemoryPermissionGrantRepository(),
+        )
+        access_service.register_backend(
+            Backend(name="powerdns-local", backend_type="powerdns", capabilities=())
+        )
+        access_service.register_zone(Zone(name="example.com", backend_name="powerdns-local"))
+        client = TestClient(
+            create_app(
+                auth_service=auth_service,
+                access_service=access_service,
+                identity_provider_service=self.client.app.state.identity_provider_service,
+                zone_read_service=ZoneReadService(
+                    access_service=access_service,
+                    adapters={"powerdns-local": InMemoryZoneReadAdapter()},
+                ),
+                audit_service=AuditService(
+                    repository=InMemoryAuditEventRepository(),
+                    access_service=access_service,
+                ),
+                oidc_service=self.client.app.state.oidc_service,
+            )
+        )
+
+        start_response = client.get("/auth/oidc/corp-oidc/login")
+        authorization_url = start_response.json()["authorizationUrl"]
+        state = parse_qs(urlparse(authorization_url).query)["state"][0]
+
+        response = client.get(f"/auth/oidc/corp-oidc/callback?code=test-code&state={state}")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("self-signup is disabled", response.json()["detail"])
 
     def test_logout_rejects_missing_csrf_token(self) -> None:
         self.client.post(
@@ -276,6 +355,15 @@ class AuthApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["detail"], "csrf token invalid or missing")
+
+    def test_auth_settings_reports_hardening_configuration(self) -> None:
+        response = self.client.get("/auth/settings")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["localLoginEnabled"])
+        self.assertTrue(payload["csrfEnabled"])
+        self.assertEqual(payload["sessionCookieName"], "zonix_session")
 
 
 if __name__ == "__main__":

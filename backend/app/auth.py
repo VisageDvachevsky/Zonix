@@ -209,7 +209,18 @@ class InMemoryUserRepository:
 class AuthIdentityConflictError(RuntimeError):
     def __init__(self, username: str, auth_source: str) -> None:
         super().__init__(
-            f"user '{username}' already exists with a different auth source and cannot sign in via '{auth_source}'"
+            "user "
+            f"'{username}' already exists with a different auth source "
+            f"and cannot sign in via '{auth_source}'"
+        )
+        self.username = username
+        self.auth_source = auth_source
+
+
+class AuthSelfSignupDisabledError(RuntimeError):
+    def __init__(self, username: str, auth_source: str) -> None:
+        super().__init__(
+            f"user '{username}' is not provisioned for '{auth_source}' and self-signup is disabled"
         )
         self.username = username
         self.auth_source = auth_source
@@ -281,9 +292,12 @@ class AuthService:
         self,
         user_repository: UserRepository,
         session_manager: SessionManager,
+        *,
+        allow_oidc_self_signup: bool = settings.auth_oidc_self_signup_enabled,
     ) -> None:
         self.user_repository = user_repository
         self.session_manager = session_manager
+        self.allow_oidc_self_signup = allow_oidc_self_signup
 
     def authenticate_local_user(self, username: str, password: str) -> User | None:
         user_record = self.user_repository.get_by_username(username)
@@ -308,6 +322,8 @@ class AuthService:
         existing = self.user_repository.get_by_username(username)
         if existing is not None and existing.auth_source not in {auth_source}:
             raise AuthIdentityConflictError(username, auth_source)
+        if existing is None and not self.allow_oidc_self_signup:
+            raise AuthSelfSignupDisabledError(username, auth_source)
 
         user_record = self.user_repository.upsert_external_user(
             username=username,

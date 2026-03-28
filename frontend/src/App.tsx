@@ -7,6 +7,7 @@ import {
   createAdminIdentityProvider,
   deleteAdminBackend,
   deleteAdminIdentityProvider,
+  fetchAuthSettings,
   fetchAdminBackends,
   fetchAdminIdentityProviders,
   fetchAdminUsers,
@@ -50,7 +51,10 @@ const adminSectionOptions: Array<{
 ];
 
 function normalizeCommaSeparatedList(value: string) {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function toggleAction(actions: string[], action: string) {
@@ -64,35 +68,59 @@ export function App() {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [selectedZoneName, setSelectedZoneName] = useState<string | null>(null);
-  const [selectedGrantUsername, setSelectedGrantUsername] = useState<string | null>(
+  const [selectedGrantUsername, setSelectedGrantUsername] = useState<
+    string | null
+  >(null);
+  const [selectedUserRole, setSelectedUserRole] = useState<
+    "admin" | "editor" | "viewer"
+  >("viewer");
+  const [adminSection, setAdminSection] = useState<AdminSection>("backends");
+  const [editingBackendName, setEditingBackendName] = useState<string | null>(
     null,
   );
-  const [selectedUserRole, setSelectedUserRole] = useState<"admin" | "editor" | "viewer">(
-    "viewer",
-  );
-  const [adminSection, setAdminSection] = useState<AdminSection>("backends");
-  const [editingBackendName, setEditingBackendName] = useState<string | null>(null);
   const [backendName, setBackendName] = useState("");
   const [backendType, setBackendType] = useState("powerdns");
   const [backendCapabilities, setBackendCapabilities] = useState(
     "readZones, readRecords, writeRecords",
   );
-  const [editingProviderName, setEditingProviderName] = useState<string | null>(null);
+  const [editingProviderName, setEditingProviderName] = useState<string | null>(
+    null,
+  );
   const [providerName, setProviderName] = useState("");
-  const [providerIssuer, setProviderIssuer] = useState("https://issuer.example");
+  const [providerIssuer, setProviderIssuer] = useState(
+    "https://issuer.example",
+  );
   const [providerClientId, setProviderClientId] = useState("zonix-ui");
   const [providerClientSecret, setProviderClientSecret] = useState("");
-  const [providerScopes, setProviderScopes] = useState("openid, profile, email");
-  const [providerFormError, setProviderFormError] = useState<string | null>(null);
+  const [providerScopes, setProviderScopes] = useState(
+    "openid, profile, email",
+  );
+  const [providerFormError, setProviderFormError] = useState<string | null>(
+    null,
+  );
   const [providerClaimsRules, setProviderClaimsRules] = useState(
     '{\n  "usernameClaim": "preferred_username",\n  "rolesClaim": "groups",\n  "adminGroups": ["dns-admins"],\n  "zoneEditorPattern": "zone-{zone}-editors",\n  "zoneViewerPattern": "zone-{zone}-viewers"\n}',
   );
   const [grantActions, setGrantActions] = useState<string[]>(["read"]);
 
-  const healthQuery = useQuery({ queryKey: ["health"], queryFn: fetchHealth, retry: false });
-  const sessionQuery = useQuery({ queryKey: ["session"], queryFn: fetchSession, retry: false });
+  const healthQuery = useQuery({
+    queryKey: ["health"],
+    queryFn: fetchHealth,
+    retry: false,
+  });
+  const authSettingsQuery = useQuery({
+    queryKey: ["auth-settings"],
+    queryFn: fetchAuthSettings,
+    retry: false,
+  });
+  const sessionQuery = useQuery({
+    queryKey: ["session"],
+    queryFn: fetchSession,
+    retry: false,
+  });
   const session = sessionQuery.data;
-  const isAuthenticated = session?.authenticated === true && session.user !== null;
+  const isAuthenticated =
+    session?.authenticated === true && session.user !== null;
   const currentUser = isAuthenticated ? session.user : null;
   const isAdmin = currentUser?.role === "admin";
 
@@ -154,7 +182,9 @@ export function App() {
         queryClient.invalidateQueries({ queryKey: ["zones"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-backends"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-identity-providers"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["admin-identity-providers"],
+        }),
       ]);
     },
   });
@@ -212,13 +242,17 @@ export function App() {
     mutationFn: createAdminIdentityProvider,
     onSuccess: async () => {
       resetProviderForm();
-      await queryClient.invalidateQueries({ queryKey: ["admin-identity-providers"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-identity-providers"],
+      });
     },
   });
   const deleteIdentityProviderMutation = useMutation({
     mutationFn: deleteAdminIdentityProvider,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["admin-identity-providers"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-identity-providers"],
+      });
     },
   });
   const updateUserRoleMutation = useMutation({
@@ -289,7 +323,10 @@ export function App() {
   useEffect(() => {
     if (!isAuthenticated) return setSelectedZoneName(null);
     if (!zoneItems || zoneItems.length === 0) return setSelectedZoneName(null);
-    if (!selectedZoneName || !zoneItems.some((zone) => zone.name === selectedZoneName)) {
+    if (
+      !selectedZoneName ||
+      !zoneItems.some((zone) => zone.name === selectedZoneName)
+    ) {
       setSelectedZoneName(zoneItems[0].name);
     }
   }, [isAuthenticated, selectedZoneName, zoneItems]);
@@ -331,7 +368,10 @@ export function App() {
     event.preventDefault();
     let claimsMappingRules: Record<string, unknown>;
     try {
-      claimsMappingRules = JSON.parse(providerClaimsRules) as Record<string, unknown>;
+      claimsMappingRules = JSON.parse(providerClaimsRules) as Record<
+        string,
+        unknown
+      >;
     } catch {
       setProviderFormError("Claims mapping rules must be valid JSON.");
       return;
@@ -343,7 +383,9 @@ export function App() {
       issuer: providerIssuer,
       clientId: providerClientId,
       clientSecret:
-        providerClientSecret.trim().length > 0 ? providerClientSecret : undefined,
+        providerClientSecret.trim().length > 0
+          ? providerClientSecret
+          : undefined,
       scopes: normalizeCommaSeparatedList(providerScopes),
       claimsMappingRules,
     });
@@ -375,7 +417,7 @@ export function App() {
 
         <section className="hero-shell">
           <section className="hero-copy">
-            <p className="eyebrow">Zonix Day 19</p>
+            <p className="eyebrow">Zonix Day 20</p>
             <h1>Sign in to Zonix.</h1>
             <p className="lede">
               Authenticate with your operator account, inspect live DNS state,
@@ -411,8 +453,8 @@ export function App() {
                 {loginMutation.isPending ? "Signing in..." : "Sign in"}
               </button>
               <p className="helper-copy">
-                Use your bootstrap admin password or the credentials already
-                seeded into the local stack.
+                Use the bootstrap admin password or a pre-provisioned account.
+                Self-signup is disabled.
               </p>
               {loginMutation.isError ? (
                 <p className="status-error">Invalid username or password.</p>
@@ -461,10 +503,42 @@ export function App() {
                   <dt>Inventory sync</dt>
                   <dd>{healthQuery.data.inventorySync ?? "pending"}</dd>
                 </div>
+                {authSettingsQuery.data ? (
+                  <>
+                    <div>
+                      <dt>Session TTL</dt>
+                      <dd>
+                        {Math.round(
+                          authSettingsQuery.data.sessionTtlSeconds / 3600,
+                        )}
+                        h
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Cookie policy</dt>
+                      <dd>
+                        {authSettingsQuery.data.sessionCookieSameSite}
+                        {authSettingsQuery.data.sessionCookieSecure
+                          ? " + secure"
+                          : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Self-signup</dt>
+                      <dd>
+                        {authSettingsQuery.data.oidcSelfSignupEnabled
+                          ? "enabled"
+                          : "disabled"}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
               </dl>
             ) : null}
             {healthQuery.data?.inventorySyncError ? (
-              <p className="status-error">{healthQuery.data.inventorySyncError}</p>
+              <p className="status-error">
+                {healthQuery.data.inventorySyncError}
+              </p>
             ) : null}
           </aside>
         </section>
@@ -477,6 +551,7 @@ export function App() {
           <div className="capability-list">
             <span>Local auth</span>
             <span>OIDC role mapping</span>
+            <span>Hardened sessions</span>
             <span>Backend config admin</span>
             <span>IdP config admin</span>
             <span>Role bindings</span>
@@ -497,15 +572,18 @@ export function App() {
           <article className="panel panel-zones">
             <p className="panel-label">Accessible zones</p>
             <h2>Scoped by current role and grants.</h2>
-            <p className="placeholder-copy">Zone visibility appears after login.</p>
+            <p className="placeholder-copy">
+              Zone visibility appears after login.
+            </p>
           </article>
 
           <article className="panel panel-detail">
             <p className="panel-label">Zone detail</p>
             <h2>Pick a zone to inspect.</h2>
             <p className="placeholder-copy">
-              Zonix keeps backend identity, zone metadata, and record inventory in one
-              workspace, so operators do not have to jump between provider consoles.
+              Zonix keeps backend identity, zone metadata, and record inventory
+              in one workspace, so operators do not have to jump between
+              provider consoles.
             </p>
           </article>
 
@@ -543,7 +621,7 @@ export function App() {
       <section className="workspace-shell">
         <header className="panel workspace-header">
           <div className="workspace-copy">
-            <p className="eyebrow">Zonix Day 19</p>
+            <p className="eyebrow">Zonix Day 20</p>
             <h1>Control plane workspace</h1>
             <p className="lede">
               Inspect backend reachability, browse zones, and operate the admin
@@ -612,10 +690,34 @@ export function App() {
                 <dt>Inventory sync</dt>
                 <dd>{healthQuery.data.inventorySync ?? "pending"}</dd>
               </div>
+              {authSettingsQuery.data ? (
+                <>
+                  <div>
+                    <dt>Session TTL</dt>
+                    <dd>
+                      {Math.round(
+                        authSettingsQuery.data.sessionTtlSeconds / 3600,
+                      )}
+                      h
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Cookie policy</dt>
+                    <dd>
+                      {authSettingsQuery.data.sessionCookieSameSite}
+                      {authSettingsQuery.data.sessionCookieSecure
+                        ? " + secure"
+                        : ""}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
             </dl>
           ) : null}
           {healthQuery.data?.inventorySyncError ? (
-            <p className="status-error">{healthQuery.data.inventorySyncError}</p>
+            <p className="status-error">
+              {healthQuery.data.inventorySyncError}
+            </p>
           ) : null}
         </aside>
       </section>
@@ -628,6 +730,7 @@ export function App() {
         <div className="capability-list">
           <span>Local auth</span>
           <span>OIDC role mapping</span>
+          <span>Hardened sessions</span>
           <span>Backend config admin</span>
           <span>IdP config admin</span>
           <span>Role bindings</span>
@@ -645,9 +748,13 @@ export function App() {
               Operator-facing inventory still comes from the shared service
               layer, filtered by the current identity.
             </p>
-            {backendsQuery.isLoading ? <p className="placeholder-copy">Loading backends...</p> : null}
+            {backendsQuery.isLoading ? (
+              <p className="placeholder-copy">Loading backends...</p>
+            ) : null}
             {backendsQuery.isError ? (
-              <p className="status-error">Backend inventory could not be loaded.</p>
+              <p className="status-error">
+                Backend inventory could not be loaded.
+              </p>
             ) : null}
             <ul className="resource-list backend-list">
               {backendsQuery.data?.items.map((backend) => (
@@ -660,7 +767,9 @@ export function App() {
               ))}
             </ul>
             {backendsQuery.data && backendsQuery.data.items.length === 0 ? (
-              <p className="placeholder-copy">No backend configs are reachable yet.</p>
+              <p className="placeholder-copy">
+                No backend configs are reachable yet.
+              </p>
             ) : null}
           </article>
 
@@ -672,9 +781,13 @@ export function App() {
               </div>
               <span className="panel-meta">{zoneItems?.length ?? 0} zones</span>
             </div>
-            {zonesQuery.isLoading ? <p className="placeholder-copy">Loading zones...</p> : null}
+            {zonesQuery.isLoading ? (
+              <p className="placeholder-copy">Loading zones...</p>
+            ) : null}
             {zonesQuery.isError ? (
-              <p className="status-error">Zone inventory could not be loaded.</p>
+              <p className="status-error">
+                Zone inventory could not be loaded.
+              </p>
             ) : null}
             <ul className="resource-list zone-list">
               {(zoneItems ?? []).map((zone) => {
@@ -715,7 +828,9 @@ export function App() {
             <div className="panel-heading">
               <div>
                 <p className="panel-label">Zone detail</p>
-                <h2>{zoneDetailQuery.data?.name ?? "Pick a zone to inspect."}</h2>
+                <h2>
+                  {zoneDetailQuery.data?.name ?? "Pick a zone to inspect."}
+                </h2>
               </div>
               <div className="panel-heading-actions">
                 {zoneDetailQuery.data ? (
@@ -798,7 +913,9 @@ export function App() {
                           className={`record-item record-item-${record.recordType.toLowerCase()}`}
                         >
                           <div className="record-cell record-cell-type">
-                            <span className="record-badge">{record.recordType}</span>
+                            <span className="record-badge">
+                              {record.recordType}
+                            </span>
                           </div>
                           <div className="record-cell record-cell-name">
                             <p className="record-name">{record.name}</p>
@@ -807,7 +924,9 @@ export function App() {
                             <span className="record-ttl">{record.ttl}</span>
                           </div>
                           <div className="record-cell record-cell-value">
-                            <p className="record-values">{record.values.join(", ")}</p>
+                            <p className="record-values">
+                              {record.values.join(", ")}
+                            </p>
                           </div>
                         </li>
                       ))}
@@ -830,7 +949,7 @@ export function App() {
                       <h2>
                         {adminSection === "access" && selectedZoneName
                           ? `Access for ${selectedZoneName}`
-                          : activeAdminSection?.label ?? "Admin console"}
+                          : (activeAdminSection?.label ?? "Admin console")}
                       </h2>
                       <p className="admin-drawer-copy">
                         {adminSection === "access"
@@ -848,8 +967,12 @@ export function App() {
                     activeSectionLabel={activeAdminSection?.label}
                     adminBackends={adminBackendsQuery.data?.items ?? []}
                     adminBackendsLoading={adminBackendsQuery.isLoading}
-                    adminIdentityProviders={adminIdentityProvidersQuery.data?.items ?? []}
-                    adminIdentityProvidersLoading={adminIdentityProvidersQuery.isLoading}
+                    adminIdentityProviders={
+                      adminIdentityProvidersQuery.data?.items ?? []
+                    }
+                    adminIdentityProvidersLoading={
+                      adminIdentityProvidersQuery.isLoading
+                    }
                     adminUsers={adminUsers}
                     adminZoneGrants={adminZoneGrantsQuery.data?.items ?? []}
                     adminZoneGrantsLoading={adminZoneGrantsQuery.isLoading}
@@ -862,11 +985,19 @@ export function App() {
                     createBackendError={createBackendMutation.isError}
                     createBackendPending={createBackendMutation.isPending}
                     createBackendSuccess={createBackendMutation.isSuccess}
-                    createIdentityProviderError={createIdentityProviderMutation.isError}
-                    createIdentityProviderPending={createIdentityProviderMutation.isPending}
-                    createIdentityProviderSuccess={createIdentityProviderMutation.isSuccess}
+                    createIdentityProviderError={
+                      createIdentityProviderMutation.isError
+                    }
+                    createIdentityProviderPending={
+                      createIdentityProviderMutation.isPending
+                    }
+                    createIdentityProviderSuccess={
+                      createIdentityProviderMutation.isSuccess
+                    }
                     deleteBackendPending={deleteBackendMutation.isPending}
-                    deleteIdentityProviderPending={deleteIdentityProviderMutation.isPending}
+                    deleteIdentityProviderPending={
+                      deleteIdentityProviderMutation.isPending
+                    }
                     editingBackendName={editingBackendName}
                     editingProviderName={editingProviderName}
                     grantActions={grantActions}
@@ -876,13 +1007,23 @@ export function App() {
                     isRoleChangeBlocked={isRoleChangeBlocked}
                     onBackendSubmit={handleBackendSubmit}
                     onDeleteBackend={(backendNameToDelete) => {
-                      if (window.confirm(`Delete backend config '${backendNameToDelete}'?`)) {
+                      if (
+                        window.confirm(
+                          `Delete backend config '${backendNameToDelete}'?`,
+                        )
+                      ) {
                         deleteBackendMutation.mutate(backendNameToDelete);
                       }
                     }}
                     onDeleteIdentityProvider={(providerNameToDelete) => {
-                      if (window.confirm(`Delete IdP config '${providerNameToDelete}'?`)) {
-                        deleteIdentityProviderMutation.mutate(providerNameToDelete);
+                      if (
+                        window.confirm(
+                          `Delete IdP config '${providerNameToDelete}'?`,
+                        )
+                      ) {
+                        deleteIdentityProviderMutation.mutate(
+                          providerNameToDelete,
+                        );
                       }
                     }}
                     onEditBackend={(backend) => {
@@ -899,7 +1040,9 @@ export function App() {
                       setProviderClientId(provider.clientId);
                       setProviderClientSecret("");
                       setProviderScopes(provider.scopes.join(", "));
-                      setProviderClaimsRules(JSON.stringify(provider.claimsMappingRules, null, 2));
+                      setProviderClaimsRules(
+                        JSON.stringify(provider.claimsMappingRules, null, 2),
+                      );
                       setProviderFormError(null);
                       setAdminSection("identity");
                     }}
@@ -935,7 +1078,9 @@ export function App() {
                     setSelectedUserRole={setSelectedUserRole}
                     syncBackendPending={syncBackendMutation.isPending}
                     toggleGrantAction={(action) =>
-                      setGrantActions((current) => toggleAction(current, action))
+                      setGrantActions((current) =>
+                        toggleAction(current, action),
+                      )
                     }
                     updateUserRoleError={updateUserRoleMutation.isError}
                     updateUserRolePending={updateUserRoleMutation.isPending}

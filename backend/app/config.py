@@ -1,7 +1,19 @@
 from dataclasses import dataclass, field
 from json import loads
 from os import getenv
-from secrets import token_urlsafe
+
+
+def env_flag(name: str, default: bool) -> bool:
+    raw_value = getenv(name)
+    if raw_value is None:
+        return default
+
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean-like value")
 
 
 @dataclass(frozen=True)
@@ -18,17 +30,41 @@ class Settings:
     bootstrap_admin_username: str = field(
         default_factory=lambda: getenv("ZONIX_BOOTSTRAP_ADMIN_USERNAME", "admin")
     )
+    bootstrap_admin_enabled: bool = field(
+        default_factory=lambda: env_flag("ZONIX_BOOTSTRAP_ADMIN_ENABLED", True)
+    )
     bootstrap_admin_password: str = field(
-        default_factory=lambda: getenv("ZONIX_BOOTSTRAP_ADMIN_PASSWORD") or token_urlsafe(18)
+        default_factory=lambda: getenv(
+            "ZONIX_BOOTSTRAP_ADMIN_PASSWORD",
+            "local-dev-admin-change-me",
+        )
     )
     session_cookie_name: str = field(
         default_factory=lambda: getenv("ZONIX_SESSION_COOKIE_NAME", "zonix_session")
     )
+    session_cookie_samesite: str = field(
+        default_factory=lambda: getenv("ZONIX_SESSION_COOKIE_SAMESITE", "lax")
+    )
+    session_cookie_secure: bool = field(
+        default_factory=lambda: env_flag("ZONIX_SESSION_COOKIE_SECURE", False)
+    )
+    session_cookie_domain: str | None = field(
+        default_factory=lambda: getenv("ZONIX_SESSION_COOKIE_DOMAIN") or None
+    )
+    session_cookie_path: str = field(
+        default_factory=lambda: getenv("ZONIX_SESSION_COOKIE_PATH", "/")
+    )
     session_secret_key: str = field(
-        default_factory=lambda: getenv("ZONIX_SESSION_SECRET_KEY") or token_urlsafe(32)
+        default_factory=lambda: getenv(
+            "ZONIX_SESSION_SECRET_KEY",
+            "local-dev-session-secret-change-me-32-bytes",
+        )
     )
     session_ttl_seconds: int = field(
         default_factory=lambda: int(getenv("ZONIX_SESSION_TTL_SECONDS", str(60 * 60 * 12)))
+    )
+    auth_oidc_self_signup_enabled: bool = field(
+        default_factory=lambda: env_flag("ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED", False)
     )
     powerdns_backend_name: str = field(
         default_factory=lambda: getenv("ZONIX_POWERDNS_BACKEND_NAME", "powerdns-local")
@@ -71,6 +107,12 @@ class Settings:
     def __post_init__(self) -> None:
         if not self.session_cookie_name:
             raise ValueError("ZONIX_SESSION_COOKIE_NAME must not be empty")
+        if self.session_cookie_samesite not in {"lax", "strict", "none"}:
+            raise ValueError("ZONIX_SESSION_COOKIE_SAMESITE must be one of lax, strict, none")
+        if self.session_cookie_samesite == "none" and not self.session_cookie_secure:
+            raise ValueError("ZONIX_SESSION_COOKIE_SECURE must be true when SameSite=None")
+        if not self.session_cookie_path.startswith("/"):
+            raise ValueError("ZONIX_SESSION_COOKIE_PATH must start with /")
         if self.session_ttl_seconds <= 0:
             raise ValueError("ZONIX_SESSION_TTL_SECONDS must be positive")
         if not self.powerdns_backend_name:
@@ -85,14 +127,23 @@ class Settings:
             raise ValueError("ZONIX_POWERDNS_TIMEOUT_SECONDS must be positive")
         if not isinstance(self.oidc_bootstrap_claims_mapping_rules, dict):
             raise ValueError("ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES must decode to an object")
+        if self.bootstrap_admin_enabled and not self.bootstrap_admin_password:
+            raise ValueError(
+                "ZONIX_BOOTSTRAP_ADMIN_PASSWORD must not be empty when bootstrap is enabled"
+            )
 
         if self.environment != "development":
-            if self.session_secret_key == "zonix-dev-session-secret":
+            if self.session_secret_key == "local-dev-session-secret-change-me-32-bytes":
                 raise ValueError("ZONIX_SESSION_SECRET_KEY must be overridden outside development")
-            if self.bootstrap_admin_password == "admin":
+            if (
+                self.bootstrap_admin_enabled
+                and self.bootstrap_admin_password == "local-dev-admin-change-me"
+            ):
                 raise ValueError(
                     "ZONIX_BOOTSTRAP_ADMIN_PASSWORD must be overridden outside development"
                 )
+            if not self.session_cookie_secure:
+                raise ValueError("ZONIX_SESSION_COOKIE_SECURE must be true outside development")
 
 
 settings = Settings()

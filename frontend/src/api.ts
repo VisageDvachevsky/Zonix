@@ -36,6 +36,20 @@ export const sessionResponseSchema = z.object({
 
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 
+export const authSettingsResponseSchema = z.object({
+  localLoginEnabled: z.boolean(),
+  oidcEnabled: z.boolean(),
+  oidcSelfSignupEnabled: z.boolean(),
+  csrfEnabled: z.boolean(),
+  sessionCookieName: z.string().min(1),
+  sessionCookieSameSite: z.string().min(1),
+  sessionCookieSecure: z.boolean(),
+  sessionTtlSeconds: z.number().int().positive(),
+  bootstrapAdminEnabled: z.boolean(),
+});
+
+export type AuthSettingsResponse = z.infer<typeof authSettingsResponseSchema>;
+
 export const loginRequestSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
@@ -113,132 +127,137 @@ export const zoneListResponseSchema = z.object({
 
 export type ZoneListResponse = z.infer<typeof zoneListResponseSchema>;
 
-export const recordDraftSchema = z.object({
-  zoneName: z.string().min(1),
-  name: z.string().min(1),
-  recordType: z.preprocess((value) => {
-    if (typeof value !== "string") {
-      return value;
-    }
-    return value.toUpperCase();
-  }, recordTypeSchema),
-  ttl: z.number().int().positive(),
-  values: z.array(z.string().min(1)),
-}).superRefine((record, ctx) => {
-  function addIssue(message: string) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message,
-      path: ["values"],
-    });
-  }
-
-  function requireSingleValue() {
-    if (record.values.length !== 1) {
-      addIssue(`${record.recordType} records must contain exactly one value`);
-      return false;
-    }
-    return true;
-  }
-
-  function isDomainLike(value: string) {
-    return value.trim().length > 0;
-  }
-
-  function isIPv4(value: string) {
-    const octets = value.split(".");
-    if (octets.length !== 4) {
-      return false;
+export const recordDraftSchema = z
+  .object({
+    zoneName: z.string().min(1),
+    name: z.string().min(1),
+    recordType: z.preprocess((value) => {
+      if (typeof value !== "string") {
+        return value;
+      }
+      return value.toUpperCase();
+    }, recordTypeSchema),
+    ttl: z.number().int().positive(),
+    values: z.array(z.string().min(1)),
+  })
+  .superRefine((record, ctx) => {
+    function addIssue(message: string) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message,
+        path: ["values"],
+      });
     }
 
-    return octets.every((octet) => {
-      if (!/^\d+$/.test(octet)) {
+    function requireSingleValue() {
+      if (record.values.length !== 1) {
+        addIssue(`${record.recordType} records must contain exactly one value`);
         return false;
       }
-      const parsed = Number(octet);
-      return parsed >= 0 && parsed <= 255;
-    });
-  }
-
-  function isIPv6(value: string) {
-    if (!/^[0-9A-Fa-f:]+$/.test(value) || !value.includes(":")) {
-      return false;
+      return true;
     }
 
-    const compressed = value.split("::");
-    if (compressed.length > 2) {
-      return false;
+    function isDomainLike(value: string) {
+      return value.trim().length > 0;
     }
 
-    const parseHextets = (segment: string) =>
-      segment === "" ? [] : segment.split(":");
-    const left = parseHextets(compressed[0]);
-    const right = compressed.length === 2 ? parseHextets(compressed[1]) : [];
-    const allHextets = [...left, ...right];
+    function isIPv4(value: string) {
+      const octets = value.split(".");
+      if (octets.length !== 4) {
+        return false;
+      }
 
-    if (!allHextets.every((hextet) => /^[0-9A-Fa-f]{1,4}$/.test(hextet))) {
-      return false;
+      return octets.every((octet) => {
+        if (!/^\d+$/.test(octet)) {
+          return false;
+        }
+        const parsed = Number(octet);
+        return parsed >= 0 && parsed <= 255;
+      });
     }
 
-    if (compressed.length === 1) {
-      return left.length === 8;
+    function isIPv6(value: string) {
+      if (!/^[0-9A-Fa-f:]+$/.test(value) || !value.includes(":")) {
+        return false;
+      }
+
+      const compressed = value.split("::");
+      if (compressed.length > 2) {
+        return false;
+      }
+
+      const parseHextets = (segment: string) =>
+        segment === "" ? [] : segment.split(":");
+      const left = parseHextets(compressed[0]);
+      const right = compressed.length === 2 ? parseHextets(compressed[1]) : [];
+      const allHextets = [...left, ...right];
+
+      if (!allHextets.every((hextet) => /^[0-9A-Fa-f]{1,4}$/.test(hextet))) {
+        return false;
+      }
+
+      if (compressed.length === 1) {
+        return left.length === 8;
+      }
+
+      return left.length + right.length < 8;
     }
 
-    return left.length + right.length < 8;
-  }
-
-  switch (record.recordType) {
-    case "A":
-      for (const value of record.values) {
-        if (!isIPv4(value)) {
-          addIssue(`Invalid A record value: ${value}`);
+    switch (record.recordType) {
+      case "A":
+        for (const value of record.values) {
+          if (!isIPv4(value)) {
+            addIssue(`Invalid A record value: ${value}`);
+          }
         }
-      }
-      break;
-    case "AAAA":
-      for (const value of record.values) {
-        if (!isIPv6(value)) {
-          addIssue(`Invalid AAAA record value: ${value}`);
+        break;
+      case "AAAA":
+        for (const value of record.values) {
+          if (!isIPv6(value)) {
+            addIssue(`Invalid AAAA record value: ${value}`);
+          }
         }
-      }
-      break;
-    case "CNAME":
-    case "NS":
-    case "PTR":
-      if (requireSingleValue() && !isDomainLike(record.values[0])) {
-        addIssue(`${record.recordType} record target must not be empty`);
-      }
-      break;
-    case "MX":
-      for (const value of record.values) {
-        if (!/^\d+\s+\S+$/.test(value)) {
-          addIssue(`Invalid MX record value: ${value}`);
+        break;
+      case "CNAME":
+      case "NS":
+      case "PTR":
+        if (requireSingleValue() && !isDomainLike(record.values[0])) {
+          addIssue(`${record.recordType} record target must not be empty`);
         }
-      }
-      break;
-    case "SRV":
-      for (const value of record.values) {
-        if (!/^\d+\s+\d+\s+\d+\s+\S+$/.test(value)) {
-          addIssue(`Invalid SRV record value: ${value}`);
+        break;
+      case "MX":
+        for (const value of record.values) {
+          if (!/^\d+\s+\S+$/.test(value)) {
+            addIssue(`Invalid MX record value: ${value}`);
+          }
         }
-      }
-      break;
-    case "CAA":
-      for (const value of record.values) {
-        if (!/^\d+\s+(issue|issuewild|iodef)\s+.+$/i.test(value)) {
-          addIssue(`Invalid CAA record value: ${value}`);
+        break;
+      case "SRV":
+        for (const value of record.values) {
+          if (!/^\d+\s+\d+\s+\d+\s+\S+$/.test(value)) {
+            addIssue(`Invalid SRV record value: ${value}`);
+          }
         }
-      }
-      break;
-    case "SOA":
-      if (requireSingleValue() && record.values[0].trim().split(/\s+/).length !== 7) {
-        addIssue("SOA record value must contain exactly 7 fields");
-      }
-      break;
-    case "TXT":
-      break;
-  }
-});
+        break;
+      case "CAA":
+        for (const value of record.values) {
+          if (!/^\d+\s+(issue|issuewild|iodef)\s+.+$/i.test(value)) {
+            addIssue(`Invalid CAA record value: ${value}`);
+          }
+        }
+        break;
+      case "SOA":
+        if (
+          requireSingleValue() &&
+          record.values[0].trim().split(/\s+/).length !== 7
+        ) {
+          addIssue("SOA record value must contain exactly 7 fields");
+        }
+        break;
+      case "TXT":
+        break;
+    }
+  });
 
 export const recordSetSchema = recordDraftSchema.extend({
   version: z.string().min(1),
@@ -263,7 +282,10 @@ function normalizeApiBaseUrl(rawApiBaseUrl: string) {
   try {
     const parsed = new URL(rawApiBaseUrl, window.location.origin);
     const localHosts = new Set(["localhost", "127.0.0.1"]);
-    if (localHosts.has(parsed.hostname) && localHosts.has(window.location.hostname)) {
+    if (
+      localHosts.has(parsed.hostname) &&
+      localHosts.has(window.location.hostname)
+    ) {
       parsed.hostname = window.location.hostname;
     }
     return parsed.toString().replace(/\/$/, "");
@@ -296,9 +318,7 @@ function readCookie(name: string) {
 
 function withCsrfHeaders(headers: Record<string, string>) {
   const csrfToken = readCookie(csrfCookieName);
-  return csrfToken
-    ? { ...headers, [csrfHeaderName]: csrfToken }
-    : headers;
+  return csrfToken ? { ...headers, [csrfHeaderName]: csrfToken } : headers;
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -334,6 +354,22 @@ export async function fetchSession(): Promise<SessionResponse> {
   }
 
   return sessionResponseSchema.parse(await response.json());
+}
+
+export async function fetchAuthSettings(): Promise<AuthSettingsResponse> {
+  const response = await fetch(`${apiBaseUrl}/auth/settings`, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Auth settings lookup failed with status ${response.status}`,
+    );
+  }
+
+  return authSettingsResponseSchema.parse(await response.json());
 }
 
 export async function login(input: {
@@ -438,7 +474,9 @@ export async function fetchAdminBackends(): Promise<BackendListResponse> {
   });
 
   if (!response.ok) {
-    throw new Error(`Admin backend listing failed with status ${response.status}`);
+    throw new Error(
+      `Admin backend listing failed with status ${response.status}`,
+    );
   }
 
   return backendListResponseSchema.parse(await response.json());
@@ -482,7 +520,9 @@ export async function deleteAdminBackend(backendName: string) {
   );
 
   if (!response.ok) {
-    throw new Error(`Admin backend delete failed with status ${response.status}`);
+    throw new Error(
+      `Admin backend delete failed with status ${response.status}`,
+    );
   }
 }
 
@@ -520,7 +560,9 @@ export async function fetchAdminIdentityProviders(): Promise<IdentityProviderCon
   });
 
   if (!response.ok) {
-    throw new Error(`Identity provider listing failed with status ${response.status}`);
+    throw new Error(
+      `Identity provider listing failed with status ${response.status}`,
+    );
   }
 
   return identityProviderConfigListResponseSchema.parse(await response.json());
@@ -558,7 +600,9 @@ export async function createAdminIdentityProvider(input: {
   });
 
   if (!response.ok) {
-    throw new Error(`Identity provider save failed with status ${response.status}`);
+    throw new Error(
+      `Identity provider save failed with status ${response.status}`,
+    );
   }
 
   return identityProviderConfigSchema.parse(await response.json());

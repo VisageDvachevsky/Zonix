@@ -49,6 +49,18 @@ class AuthSessionResponse(BaseModel):
     user: AuthenticatedUserResponse | None = None
 
 
+class AuthSettingsResponse(BaseModel):
+    local_login_enabled: bool = Field(alias="localLoginEnabled")
+    oidc_enabled: bool = Field(alias="oidcEnabled")
+    oidc_self_signup_enabled: bool = Field(alias="oidcSelfSignupEnabled")
+    csrf_enabled: bool = Field(alias="csrfEnabled")
+    session_cookie_name: str = Field(min_length=1, alias="sessionCookieName")
+    session_cookie_samesite: str = Field(min_length=1, alias="sessionCookieSameSite")
+    session_cookie_secure: bool = Field(alias="sessionCookieSecure")
+    session_ttl_seconds: int = Field(gt=0, alias="sessionTtlSeconds")
+    bootstrap_admin_enabled: bool = Field(alias="bootstrapAdminEnabled")
+
+
 class OIDCProviderResponse(BaseModel):
     name: str = Field(min_length=1)
     kind: IdentityProviderKind
@@ -158,7 +170,7 @@ class ChangePreviewRequest(BaseModel):
     expected_version: str | None = Field(default=None, alias="expectedVersion")
 
     @model_validator(mode="after")
-    def validate_operation_shape(self) -> "ChangePreviewRequest":
+    def validate_operation_shape(self) -> ChangePreviewRequest:
         if self.operation in {ChangeOperation.CREATE, ChangeOperation.UPDATE}:
             if self.ttl is None:
                 raise ValueError("ttl is required for create/update preview")
