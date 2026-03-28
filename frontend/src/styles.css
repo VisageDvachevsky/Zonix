@@ -52,9 +52,9 @@ body::before {
 .app-shell {
   position: relative;
   overflow: hidden;
-  max-width: 1320px;
+  max-width: 1640px;
   margin: 0 auto;
-  padding: 34px 24px 72px;
+  padding: 34px 28px 72px;
 }
 
 .backdrop-orb {
@@ -272,7 +272,7 @@ body::before {
 }
 
 .workspace-main-deck-drawer-open {
-  grid-template-columns: minmax(0, 1.22fr) minmax(380px, 0.96fr);
+  grid-template-columns: minmax(0, 1.72fr) minmax(360px, 0.82fr);
   align-items: start;
 }
 
@@ -284,7 +284,7 @@ body::before {
 .workspace-shell {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.58fr);
+  grid-template-columns: minmax(0, 2.05fr) minmax(320px, 0.72fr);
   align-items: start;
   margin-bottom: 14px;
 }
@@ -310,7 +310,7 @@ body::before {
 }
 
 .workspace-copy .lede {
-  max-width: 42ch;
+  max-width: 54ch;
 }
 
 .workspace-controls {
@@ -323,16 +323,6 @@ body::before {
 
 .workspace-controls .primary-button {
   width: 100%;
-}
-
-.workspace-admin-toggle {
-  min-width: 0;
-}
-
-.workspace-admin-toggle-active {
-  border-color: rgba(243, 170, 93, 0.28);
-  background: rgba(243, 170, 93, 0.14);
-  color: var(--accent-soft);
 }
 
 .workspace-status {
@@ -349,7 +339,7 @@ body::before {
 }
 
 .workspace-grid {
-  grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.8fr);
+  grid-template-columns: minmax(340px, 0.88fr) minmax(0, 2.35fr);
   align-items: start;
 }
 
@@ -631,10 +621,6 @@ body::before {
   max-width: 36ch;
 }
 
-.admin-drawer-close {
-  min-width: 112px;
-}
-
 .admin-drawer .admin-console {
   position: static;
   top: auto;
@@ -757,6 +743,12 @@ body::before {
   box-shadow: none;
 }
 
+.secondary-button-danger {
+  color: var(--danger);
+  border-color: rgba(255, 183, 142, 0.18);
+  background: rgba(255, 183, 142, 0.08);
+}
+
 .status-list {
   display: grid;
   gap: 8px;
@@ -865,6 +857,57 @@ body::before {
   flex: 0 0 auto;
 }
 
+.backend-config-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+}
+
+.backend-config-copy {
+  gap: 10px;
+}
+
+.backend-config-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.backend-config-type {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(243, 170, 93, 0.18);
+  background: rgba(243, 170, 93, 0.08);
+  color: var(--accent-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.backend-config-capabilities {
+  line-height: 1.5;
+}
+
+.backend-config-actions {
+  display: grid;
+  grid-auto-rows: min-content;
+  gap: 10px;
+  width: 160px;
+  align-self: stretch;
+  justify-items: stretch;
+}
+
+.backend-config-actions .secondary-button {
+  width: 100%;
+  min-width: 0;
+}
+
 .inline-actions {
   display: flex;
   flex-wrap: wrap;
@@ -899,39 +942,72 @@ body::before {
   border-color: rgba(129, 228, 199, 0.24);
 }
 
-.records-list .record-item {
+.record-table-shell {
   display: grid;
   gap: 10px;
-  align-content: start;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.record-table-head {
+  display: grid;
+  grid-template-columns: 72px minmax(100px, 1fr) 72px minmax(0, 2.8fr);
+  gap: 16px;
+  padding: 0 14px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.record-table {
+  display: grid;
+  gap: 10px;
+}
+
+.records-list.record-table .record-item {
+  display: grid;
+  grid-template-columns: 72px minmax(100px, 1fr) 72px minmax(0, 2.8fr);
+  gap: 16px;
+  align-items: center;
   padding: 15px 16px;
+  min-width: 0;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 72%),
     rgba(255, 255, 255, 0.025);
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
 }
 
-.records-list .record-row {
-  display: block;
+.records-list.record-table .record-item:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 72%),
+    rgba(255, 255, 255, 0.035);
+  transform: translateY(-1px);
 }
 
-.records-list .record-identity {
-  display: grid;
-  gap: 10px;
+.record-cell {
   min-width: 0;
 }
 
-.records-list .record-heading-line {
+.record-cell-type,
+.record-cell-ttl {
   display: flex;
   align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 .records-list .record-name {
   margin: 0;
   color: var(--headline);
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 700;
   line-height: 1.2;
   font-family: "Cascadia Code", "Consolas", monospace;
@@ -939,17 +1015,12 @@ body::before {
   word-break: break-word;
 }
 
-.records-list .record-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
 .records-list .record-ttl {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 34px;
+  min-width: 66px;
   padding: 7px 11px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
@@ -958,17 +1029,10 @@ body::before {
   font-weight: 600;
 }
 
-.records-list .record-value-block {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding-left: 0;
-}
-
 .records-list .record-values {
   margin: 0;
-  padding: 12px 14px 0 0;
-  color: var(--text-dim);
+  padding: 0;
+  color: rgba(244, 251, 248, 0.9);
   font-size: 0.92rem;
   line-height: 1.45;
   white-space: normal;
@@ -1204,12 +1268,18 @@ body::before {
     flex-direction: column;
   }
 
-  .records-list .record-heading-line {
-    flex-direction: column;
-    align-items: start;
+  .record-table-head,
+  .records-list.record-table .record-item {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
-  .records-list .record-values {
-    padding: 8px 0 0;
+  .record-table-head {
+    display: none;
+  }
+
+  .record-cell-type,
+  .record-cell-ttl {
+    justify-content: flex-start;
   }
 }

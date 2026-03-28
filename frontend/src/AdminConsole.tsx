@@ -237,14 +237,17 @@ export function AdminConsole(props: AdminConsoleProps) {
           ) : null}
           <ul className="resource-list">
             {props.adminBackends.map((backend) => (
-              <li key={backend.name} className="resource-item-action">
-                <div className="resource-copy">
-                  <strong>{backend.name}</strong>
-                  <span>
-                    {backend.backendType} · {backend.capabilities.join(", ")}
+              <li key={backend.name} className="resource-item-action backend-config-item">
+                <div className="resource-copy backend-config-copy">
+                  <div className="backend-config-heading">
+                    <strong>{backend.name}</strong>
+                    <span className="backend-config-type">{backend.backendType}</span>
+                  </div>
+                  <span className="backend-config-capabilities">
+                    {backend.capabilities.join(", ")}
                   </span>
                 </div>
-                <div className="inline-actions">
+                <div className="inline-actions backend-config-actions">
                   <button
                     className="primary-button secondary-button"
                     onClick={() => props.onEditBackend(backend)}
@@ -261,7 +264,7 @@ export function AdminConsole(props: AdminConsoleProps) {
                     {props.syncBackendPending ? "Syncing..." : "Sync zones"}
                   </button>
                   <button
-                    className="primary-button secondary-button"
+                    className="primary-button secondary-button secondary-button-danger"
                     disabled={props.deleteBackendPending}
                     onClick={() => props.onDeleteBackend(backend.name)}
                     type="button"

@@ -88,7 +88,6 @@ export function App() {
     '{\n  "usernameClaim": "preferred_username",\n  "rolesClaim": "groups",\n  "adminGroups": ["dns-admins"],\n  "zoneEditorPattern": "zone-{zone}-editors",\n  "zoneViewerPattern": "zone-{zone}-viewers"\n}',
   );
   const [grantActions, setGrantActions] = useState<string[]>(["read"]);
-  const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
 
   const healthQuery = useQuery({ queryKey: ["health"], queryFn: fetchHealth, retry: false });
   const sessionQuery = useQuery({ queryKey: ["session"], queryFn: fetchSession, retry: false });
@@ -177,7 +176,6 @@ export function App() {
       }
       setSelectedZoneName(null);
       setSelectedGrantUsername(null);
-      setAdminDrawerOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["session"] });
     },
   });
@@ -369,11 +367,6 @@ export function App() {
     });
   }
 
-  function openAdminDrawer(section: AdminSection) {
-    setAdminSection(section);
-    setAdminDrawerOpen(true);
-  }
-
   if (!isAuthenticated) {
     return (
       <main className="app-shell">
@@ -559,18 +552,6 @@ export function App() {
             </p>
           </div>
           <div className="workspace-controls">
-            {isAdmin ? (
-              <button
-                aria-expanded={adminDrawerOpen}
-                className={`primary-button secondary-button workspace-admin-toggle ${
-                  adminDrawerOpen ? "workspace-admin-toggle-active" : ""
-                }`}
-                onClick={() => setAdminDrawerOpen((current) => !current)}
-                type="button"
-              >
-                {adminDrawerOpen ? "Close admin" : "Open admin"}
-              </button>
-            ) : null}
             <div className="inline-stat">
               <span className="inline-stat-label">Signed in as</span>
               <strong>{currentUser?.username}</strong>
@@ -745,7 +726,7 @@ export function App() {
                 {isAdmin && selectedZoneName ? (
                   <button
                     className="primary-button secondary-button"
-                    onClick={() => openAdminDrawer("access")}
+                    onClick={() => setAdminSection("access")}
                     type="button"
                   >
                     Manage access
@@ -783,7 +764,7 @@ export function App() {
 
           <div
             className={`workspace-main-deck ${
-              isAdmin && adminDrawerOpen ? "workspace-main-deck-drawer-open" : ""
+              isAdmin ? "workspace-main-deck-drawer-open" : ""
             }`}
           >
             <div className="workspace-content-column">
@@ -803,29 +784,35 @@ export function App() {
                   </p>
                 ) : null}
                 {zoneRecordsQuery.data ? (
-                  <ul className="resource-list records-list">
-                    {zoneRecordsQuery.data.items.map((record) => (
-                      <li
-                        key={`${record.name}-${record.recordType}`}
-                        className={`record-item record-item-${record.recordType.toLowerCase()}`}
-                      >
-                        <div className="record-row">
-                          <div className="record-identity">
-                            <div className="record-heading-line">
-                              <p className="record-name">{record.name}</p>
-                              <div className="record-meta">
-                                <span className="record-badge">{record.recordType}</span>
-                                <span className="record-ttl">TTL {record.ttl}</span>
-                              </div>
-                            </div>
+                  <div className="record-table-shell">
+                    <div className="record-table-head" aria-hidden="true">
+                      <span>Type</span>
+                      <span>Name</span>
+                      <span>TTL</span>
+                      <span>Value</span>
+                    </div>
+                    <ul className="resource-list records-list record-table">
+                      {zoneRecordsQuery.data.items.map((record) => (
+                        <li
+                          key={`${record.name}-${record.recordType}`}
+                          className={`record-item record-item-${record.recordType.toLowerCase()}`}
+                        >
+                          <div className="record-cell record-cell-type">
+                            <span className="record-badge">{record.recordType}</span>
                           </div>
-                        </div>
-                        <div className="record-value-block">
-                          <p className="record-values">{record.values.join(", ")}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                          <div className="record-cell record-cell-name">
+                            <p className="record-name">{record.name}</p>
+                          </div>
+                          <div className="record-cell record-cell-ttl">
+                            <span className="record-ttl">{record.ttl}</span>
+                          </div>
+                          <div className="record-cell record-cell-value">
+                            <p className="record-values">{record.values.join(", ")}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : (
                   <p className="placeholder-copy">
                     Record sets appear after selecting a zone.
@@ -834,7 +821,7 @@ export function App() {
               </article>
             </div>
 
-            {isAdmin && adminDrawerOpen ? (
+            {isAdmin ? (
               <aside className="admin-drawer" aria-label="Admin drawer">
                 <div className="admin-drawer-shell">
                   <div className="admin-drawer-header">
@@ -853,13 +840,6 @@ export function App() {
                           : activeAdminSection?.description}
                       </p>
                     </div>
-                    <button
-                      className="primary-button secondary-button admin-drawer-close"
-                      onClick={() => setAdminDrawerOpen(false)}
-                      type="button"
-                    >
-                      Close
-                    </button>
                   </div>
                   <AdminConsole
                     showHeader={false}
@@ -910,7 +890,7 @@ export function App() {
                       setBackendName(backend.name);
                       setBackendType(backend.backendType);
                       setBackendCapabilities(backend.capabilities.join(", "));
-                      openAdminDrawer("backends");
+                      setAdminSection("backends");
                     }}
                     onEditIdentityProvider={(provider) => {
                       setEditingProviderName(provider.name);
@@ -921,7 +901,7 @@ export function App() {
                       setProviderScopes(provider.scopes.join(", "));
                       setProviderClaimsRules(JSON.stringify(provider.claimsMappingRules, null, 2));
                       setProviderFormError(null);
-                      openAdminDrawer("identity");
+                      setAdminSection("identity");
                     }}
                     onGrantSubmit={handleGrantSubmit}
                     onIdentityProviderSubmit={handleIdentityProviderSubmit}

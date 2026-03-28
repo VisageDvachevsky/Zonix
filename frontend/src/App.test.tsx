@@ -181,7 +181,6 @@ describe("App", () => {
     expect(await screen.findByText("www")).toBeVisible();
     expect(await screen.findByText("A")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: /open admin/i }));
     expect(await screen.findByRole("heading", { name: "Backends" })).toBeVisible();
     expect(await screen.findByRole("heading", { name: "Backend configs" })).toBeVisible();
 
