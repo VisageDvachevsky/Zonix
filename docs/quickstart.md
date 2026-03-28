@@ -18,19 +18,39 @@ This starts:
 
 - Postgres on `localhost:55432`
 - PowerDNS Authoritative API on `localhost:8081`
+- Keycloak-backed OIDC gateway on `localhost:9010`
 - FastAPI backend on `localhost:8000`
 - Vite frontend on `localhost:5173`
 
-The backend container runs SQL migrations and creates a bootstrap admin user on startup.
+The backend container runs SQL migrations, provisions deterministic demo users, and bootstraps a deterministic OIDC provider configuration on startup.
 
 ## Bootstrap admin credentials
 
 - username: `admin`
 - password: `local-dev-admin-change-me`
 
+## Demo local user credentials
+
+- editor: `alice / editor` with write access to `example.com`
+- viewer: `bob / viewer` with read access to `internal.example`
+
+## Demo OIDC identities
+
+The local compose stack runs a real Keycloak realm behind an OIDC gateway on `http://localhost:9010` and exposes deterministic browser identities:
+
+- `oidc.admin`
+- `oidc.editor`
+- `oidc.viewer`
+
+Browser passwords for the demo realm:
+
+- `oidc.admin / admin`
+- `oidc.editor / editor`
+- `oidc.viewer / viewer`
+
 Override them before exposing the stack anywhere outside your workstation. The local compose file and [`deploy/.env.example`](../deploy/.env.example) now use explicit development-only placeholders instead of `admin` / static session defaults baked into the backend.
 
-The backend reads `ZONIX_ENV`, `ZONIX_DATABASE_URL`, `ZONIX_BOOTSTRAP_ADMIN_ENABLED`, `ZONIX_BOOTSTRAP_ADMIN_USERNAME`, `ZONIX_BOOTSTRAP_ADMIN_PASSWORD`, `ZONIX_SESSION_SECRET_KEY`, `ZONIX_SESSION_COOKIE_SAMESITE`, `ZONIX_SESSION_COOKIE_SECURE`, `ZONIX_SESSION_TTL_SECONDS`, `ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED`, `ZONIX_POWERDNS_BACKEND_NAME`, `ZONIX_POWERDNS_API_URL`, `ZONIX_POWERDNS_API_KEY`, `ZONIX_POWERDNS_SERVER_ID`, and `ZONIX_POWERDNS_TIMEOUT_SECONDS`.
+The backend reads `ZONIX_ENV`, `ZONIX_DATABASE_URL`, `ZONIX_BOOTSTRAP_ADMIN_ENABLED`, `ZONIX_BOOTSTRAP_ADMIN_USERNAME`, `ZONIX_BOOTSTRAP_ADMIN_PASSWORD`, `ZONIX_BOOTSTRAP_USERS_JSON`, `ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON`, `ZONIX_SESSION_SECRET_KEY`, `ZONIX_SESSION_COOKIE_SAMESITE`, `ZONIX_SESSION_COOKIE_SECURE`, `ZONIX_SESSION_TTL_SECONDS`, `ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED`, `ZONIX_OIDC_BOOTSTRAP_NAME`, `ZONIX_OIDC_BOOTSTRAP_ISSUER`, `ZONIX_OIDC_BOOTSTRAP_CLIENT_ID`, `ZONIX_OIDC_BOOTSTRAP_CLIENT_SECRET`, `ZONIX_OIDC_BOOTSTRAP_SCOPES`, `ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES`, `ZONIX_POWERDNS_BACKEND_NAME`, `ZONIX_POWERDNS_API_URL`, `ZONIX_POWERDNS_API_KEY`, `ZONIX_POWERDNS_SERVER_ID`, and `ZONIX_POWERDNS_TIMEOUT_SECONDS`.
 
 Day 20 hardening defaults in the demo stack:
 
@@ -256,12 +276,12 @@ OIDC login start and callback are now exposed through the auth API:
 ```bash
 curl -i http://localhost:8000/auth/oidc/providers
 
-curl -i http://localhost:8000/auth/oidc/corp-oidc/login
+curl -i "http://localhost:8000/auth/oidc/corp-oidc/login?return_to=http://localhost:5173"
 
 curl -i "http://localhost:8000/auth/oidc/corp-oidc/callback?code=<provider-code>&state=<state-from-login-response>"
 ```
 
-Before using those endpoints in a real runtime, bootstrap an IdP configuration:
+The demo compose stack already bootstraps `corp-oidc` against the local Keycloak realm through the OIDC gateway. For a different runtime, bootstrap an IdP configuration yourself:
 
 ```bash
 set ZONIX_OIDC_BOOTSTRAP_NAME=corp-oidc

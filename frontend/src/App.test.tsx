@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ZodError } from "zod";
 
 import { App } from "./App";
-import { recordDraftSchema } from "./api";
+import { recordDraftSchema, startOidcLogin } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -30,9 +30,16 @@ vi.mock("./api", async (importOriginal) => {
       bootstrapAdminEnabled: true,
     })),
     fetchSession: vi.fn(async () => ({ authenticated: false, user: null })),
+    fetchOidcProviders: vi.fn(async () => ({
+      items: [{ name: "corp-oidc", kind: "oidc" }],
+    })),
     login: vi.fn(async () => ({
       authenticated: true,
       user: { username: "admin", role: "admin" },
+    })),
+    startOidcLogin: vi.fn(async () => ({
+      providerName: "corp-oidc",
+      authorizationUrl: "http://localhost:9000/authorize?state=test-state",
     })),
     logout: vi.fn(async () => ({ authenticated: false, user: null })),
     fetchBackends: vi.fn(async () => ({
@@ -45,7 +52,7 @@ vi.mock("./api", async (importOriginal) => {
         {
           name: "powerdns-sandbox",
           backendType: "powerdns",
-          capabilities: ["readZones"],
+          capabilities: ["readZones", "readRecords", "writeRecords"],
         },
       ],
     })),
@@ -54,10 +61,6 @@ vi.mock("./api", async (importOriginal) => {
         { name: "example.com", backendName: "powerdns-sandbox" },
         { name: "lab.example", backendName: "bind-lab" },
       ],
-    })),
-    fetchZone: vi.fn(async () => ({
-      name: "example.com",
-      backendName: "powerdns-sandbox",
     })),
     fetchZoneRecords: vi.fn(async () => ({
       items: [
@@ -135,6 +138,9 @@ vi.mock("./api", async (importOriginal) => {
     })),
     createAdminBackend: vi.fn(),
     createAdminIdentityProvider: vi.fn(),
+    createZoneRecord: vi.fn(),
+    updateZoneRecord: vi.fn(),
+    deleteZoneRecord: vi.fn(),
     assignAdminZoneGrant: vi.fn(),
     syncAdminBackendZones: vi.fn(),
     deleteAdminBackend: vi.fn(),
@@ -144,7 +150,27 @@ vi.mock("./api", async (importOriginal) => {
 });
 
 describe("App", () => {
-  it("renders the login form when no active session exists", async () => {
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        assign: vi.fn(),
+        origin: "http://localhost:5173",
+      },
+    });
+  });
+
+  afterAll(() => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
+  });
+
+  it("renders the hardened login screen when no session exists", async () => {
     const queryClient = new QueryClient();
 
     render(
@@ -154,15 +180,40 @@ describe("App", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: /sign in to zonix/i }),
+      screen.getByRole("heading", { name: /zonix control plane/i }),
     ).toBeVisible();
-    expect(await screen.findByText("Zonix API")).toBeVisible();
     expect(screen.getByLabelText(/username/i)).toBeVisible();
     expect(screen.getByLabelText(/password/i)).toBeVisible();
-    expect(screen.getByText(/self-signup is disabled/i)).toBeVisible();
+    expect(await screen.findByText(/api status/i)).toBeVisible();
+    expect(screen.getByText(/inventory sync/i)).toBeVisible();
+    expect(screen.getByText(/csrf/i)).toBeVisible();
+    expect(await screen.findByRole("button", { name: /sign in with corp-oidc/i })).toBeVisible();
   });
 
-  it("shows live zone detail and records after login", async () => {
+  it("starts browser OIDC login from the hardened login screen", async () => {
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /sign in with corp-oidc/i }));
+
+    await waitFor(() => {
+      expect(startOidcLogin).toHaveBeenCalled();
+      expect(vi.mocked(startOidcLogin).mock.calls[0]?.[0]).toEqual({
+        providerName: "corp-oidc",
+        returnTo: "http://localhost:5173",
+      });
+      expect(window.location.assign).toHaveBeenCalledWith(
+        "http://localhost:9000/authorize?state=test-state",
+      );
+    });
+  });
+
+  it("shows the records workspace and top-level tabs after login", async () => {
     const queryClient = new QueryClient();
 
     render(
@@ -180,37 +231,61 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(
-      await screen.findByRole("heading", { name: "Control plane workspace" }),
+      await screen.findByRole("heading", { name: /zone inventory/i }),
     ).toBeVisible();
-    expect(
-      (await screen.findAllByText("powerdns-sandbox")).length,
-    ).toBeGreaterThan(0);
-    expect(await screen.findByText("Choose a zone.")).toBeVisible();
-    expect((await screen.findAllByText("example.com")).length).toBeGreaterThan(
+    expect((await screen.findAllByText("powerdns-sandbox")).length).toBeGreaterThan(
       0,
     );
-    expect(await screen.findByText("Current zone inventory.")).toBeVisible();
     expect(await screen.findByText("www")).toBeVisible();
-    expect(await screen.findByText("A")).toBeVisible();
+    expect(await screen.findByText("192.0.2.10")).toBeVisible();
+    expect(
+      (await screen.findAllByRole("button", { name: /sync backend zones/i }))
+        .length,
+    ).toBeGreaterThan(0);
 
+    fireEvent.click(screen.getByRole("button", { name: /^operations$/i }));
     expect(
-      await screen.findByRole("heading", { name: "Backends" }),
-    ).toBeVisible();
-    expect(
-      await screen.findByRole("heading", { name: "Backend configs" }),
-    ).toBeVisible();
-
-    const adminTabs = screen.getByRole("tablist", { name: "Admin sections" });
-    fireEvent.click(within(adminTabs).getByRole("tab", { name: "Identity" }));
-    expect(
-      await screen.findByRole("heading", { name: "OIDC configs" }),
+      await screen.findByRole("heading", { name: /backend inventory/i }),
     ).toBeVisible();
 
-    fireEvent.click(within(adminTabs).getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("button", { name: /^auth$/i }));
     expect(
-      await screen.findByRole("heading", { name: "Access for example.com" }),
+      await screen.findByRole("heading", { name: /auth hardening/i }),
     ).toBeVisible();
-    expect(await screen.findByText(/zone context: example.com/i)).toBeVisible();
+  });
+
+  it("opens an inline add-record row from the main workspace", async () => {
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/username/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByRole("heading", { name: /zone inventory/i });
+
+    let enabledAddRecordButton: HTMLElement | undefined;
+    await waitFor(async () => {
+      enabledAddRecordButton = (
+        await screen.findAllByRole("button", { name: /^add record$/i })
+      ).find((button) => !button.hasAttribute("disabled"));
+      expect(enabledAddRecordButton).toBeDefined();
+    });
+
+    fireEvent.click(enabledAddRecordButton!);
+
+    expect(await screen.findByLabelText(/^name$/i)).toHaveValue("@");
+    expect(await screen.findByPlaceholderText(/one value per line/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^save$/i })).toBeVisible();
   });
 
   it("validates typed record sets with the shared frontend schema", () => {

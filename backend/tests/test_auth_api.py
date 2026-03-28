@@ -286,6 +286,33 @@ class AuthApiTests(unittest.TestCase):
             audit_response.json()["items"][0]["payload"]["authSource"], "oidc:corp-oidc"
         )
 
+    def test_oidc_callback_redirects_to_frontend_when_return_to_is_requested(self) -> None:
+        start_response = self.client.get(
+            "/auth/oidc/corp-oidc/login",
+            params={"return_to": "http://localhost:5173"},
+        )
+        authorization_url = start_response.json()["authorizationUrl"]
+        state = parse_qs(urlparse(authorization_url).query)["state"][0]
+
+        callback_response = self.client.get(
+            f"/auth/oidc/corp-oidc/callback?code=test-code&state={state}",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(callback_response.status_code, 303)
+        self.assertEqual(callback_response.headers["location"], "http://localhost:5173")
+        self.assertIn("zonix_session", callback_response.cookies)
+        self.assertIn("zonix_csrf_token", callback_response.cookies)
+
+    def test_oidc_login_start_rejects_untrusted_return_to_origin(self) -> None:
+        response = self.client.get(
+            "/auth/oidc/corp-oidc/login",
+            params={"return_to": "https://evil.example/steal"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "return_to origin is not allowed")
+
     def test_oidc_callback_rejects_invalid_state(self) -> None:
         response = self.client.get("/auth/oidc/corp-oidc/callback?code=test-code&state=broken")
 

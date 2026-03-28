@@ -14,7 +14,7 @@ The repository now covers the Day 1-20 milestone path:
 - frozen v0.1 scope, domain model, and backend capability matrix
 - React/FastAPI monorepo with CI, lint, format, and repository guardrails
 - SQL migrations, bootstrap admin flow, and Docker Compose local stack
-- reproducible bootstrap path for an OIDC provider via environment-driven CLI setup
+- reproducible bootstrap path for deterministic local demo users plus a local Keycloak-backed OIDC demo realm
 - policy enforcement across admin/editor/viewer roles
 - persisted backend registry, zone inventory, and zone-level grants
 - protected UI/API flow for backend list, zone list, zone detail, record inventory, record mutations, and audit listing
@@ -23,7 +23,7 @@ The repository now covers the Day 1-20 milestone path:
 - `ChangeSet` preview for record mutations with before/after snapshots, conflict detection, and basic optimistic locking via record version tokens
 - live PowerDNS API flow coverage for `login -> open zone -> edit record -> audit` plus an internal demo path in quickstart
 - `IdentityProvider` foundation for generic OIDC with issuer, client credentials, scopes, and claims-mapping configuration
-- generic OIDC login start/callback flow with signed state, token exchange, userinfo resolution, session issuance, and baseline viewer provisioning
+- generic OIDC login start/callback flow with signed state, token exchange, userinfo resolution, session issuance, and browser redirect back into the frontend
 - OIDC claims/groups mapping into global role and zone-level grants during callback
 - hardened auth defaults with explicit session cookie settings, CSRF-protected cookie auth, login failure/logout audit events, disabled OIDC self-signup by default, and deterministic bootstrap admin defaults for development
 

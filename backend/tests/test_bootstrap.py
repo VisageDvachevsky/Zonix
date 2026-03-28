@@ -2,7 +2,12 @@ import unittest
 from dataclasses import replace
 from unittest.mock import patch
 
-from app.bootstrap import ensure_bootstrap_admin, ensure_bootstrap_oidc_provider, settings
+from app.bootstrap import (
+    ensure_bootstrap_admin,
+    ensure_bootstrap_oidc_provider,
+    ensure_bootstrap_users,
+    settings,
+)
 from app.domain.models import IdentityProvider, IdentityProviderKind
 from app.security import verify_password
 
@@ -45,12 +50,24 @@ class InMemoryBootstrapCursor:
             return
 
         if normalized.startswith("INSERT INTO users"):
-            username, password_hash = params
+            if len(params) == 2:
+                username, password_hash = params
+                self.connection.users[username] = {
+                    "username": username,
+                    "password_hash": password_hash,
+                    "role": "admin",
+                    "auth_source": "local",
+                    "is_active": True,
+                }
+                return
+
+            username, password_hash, role, auth_source, is_active = params
             self.connection.users[username] = {
                 "username": username,
                 "password_hash": password_hash,
-                "role": "admin",
-                "auth_source": "local",
+                "role": role,
+                "auth_source": auth_source,
+                "is_active": is_active,
             }
             return
 
@@ -148,6 +165,36 @@ class BootstrapAdminTests(unittest.TestCase):
         self.assertTrue(connection.committed)
         self.assertIn("corp-oidc", connection.identity_providers)
         self.assertEqual(connection.identity_providers["corp-oidc"]["client_id"], "zonix-ui")
+
+    def test_ensure_bootstrap_users_upserts_local_and_oidc_accounts(self) -> None:
+        connection = InMemoryBootstrapConnection()
+
+        def connect_stub(_database_url: str | None = None) -> InMemoryBootstrapConnection:
+            return connection
+
+        count = ensure_bootstrap_users(
+            users=(
+                {
+                    "username": "alice",
+                    "password": "editor",
+                    "role": "editor",
+                    "authSource": "local",
+                },
+                {
+                    "username": "oidc.viewer",
+                    "role": "viewer",
+                    "authSource": "oidc:corp-oidc",
+                },
+            ),
+            connect_fn=connect_stub,
+        )
+
+        self.assertEqual(count, 2)
+        self.assertTrue(connection.committed)
+        self.assertTrue(verify_password("editor", connection.users["alice"]["password_hash"]))
+        self.assertEqual(connection.users["alice"]["role"], "editor")
+        self.assertEqual(connection.users["oidc.viewer"]["password_hash"], "")
+        self.assertEqual(connection.users["oidc.viewer"]["auth_source"], "oidc:corp-oidc")
 
 
 if __name__ == "__main__":

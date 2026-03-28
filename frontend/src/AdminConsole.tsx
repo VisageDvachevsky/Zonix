@@ -28,6 +28,7 @@ type ZoneGrant = {
 
 type AdminConsoleProps = {
   showHeader?: boolean;
+  showTabs?: boolean;
   activeSection: AdminSection;
   activeSectionLabel?: string;
   activeSectionDescription?: string;
@@ -89,6 +90,7 @@ type AdminConsoleProps = {
   updateUserRoleError: boolean;
   updateUserRoleSuccess: boolean;
   isRoleChangeBlocked: boolean;
+  isGrantChangeBlocked: boolean;
   zoneContextName: string | null;
   grantActions: string[];
   toggleGrantAction: (action: string) => void;
@@ -114,6 +116,7 @@ export function AdminConsole(props: AdminConsoleProps) {
     ? props.adminZoneGrants.filter((grant) => grant.zoneName === props.zoneContextName)
     : props.adminZoneGrants;
   const showHeader = props.showHeader ?? true;
+  const showTabs = props.showTabs ?? true;
 
   return (
     <section className="panel admin-console">
@@ -129,22 +132,24 @@ export function AdminConsole(props: AdminConsoleProps) {
           <p className="admin-console-copy">{props.activeSectionDescription}</p>
         </>
       ) : null}
-      <div className="admin-tabs" role="tablist" aria-label="Admin sections">
-        {adminSectionOptions.map((section) => (
-          <button
-            key={section.key}
-            aria-selected={props.activeSection === section.key}
-            className={`tab-button ${
-              props.activeSection === section.key ? "tab-button-active" : ""
-            }`}
-            onClick={() => props.onSectionChange(section.key)}
-            role="tab"
-            type="button"
-          >
-            {section.label}
-          </button>
-        ))}
-      </div>
+      {showTabs ? (
+        <div className="admin-tabs" role="tablist" aria-label="Admin sections">
+          {adminSectionOptions.map((section) => (
+            <button
+              key={section.key}
+              aria-selected={props.activeSection === section.key}
+              className={`tab-button ${
+                props.activeSection === section.key ? "tab-button-active" : ""
+              }`}
+              onClick={() => props.onSectionChange(section.key)}
+              role="tab"
+              type="button"
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {props.activeSection === "backends" ? (
         <article className="admin-panel-body">
@@ -470,9 +475,17 @@ export function AdminConsole(props: AdminConsoleProps) {
               <div className="status-callout status-callout-warning">
                 <strong>Current session selected</strong>
                 <p>
-                  Zone grants can still be managed for your own account, but changing
-                  your own global role is blocked from this screen to prevent accidental
-                  lockout while testing.
+                  Changing your own global role is blocked from this screen to
+                  prevent accidental lockout while testing.
+                </p>
+              </div>
+            ) : null}
+            {props.isGrantChangeBlocked ? (
+              <div className="status-callout">
+                <strong>Zone grants not needed</strong>
+                <p>
+                  Admin accounts already have full zone access. Zone grants only
+                  apply to editor and viewer accounts.
                 </p>
               </div>
             ) : null}
@@ -544,7 +557,8 @@ export function AdminConsole(props: AdminConsoleProps) {
                 props.assignGrantPending ||
                 !props.selectedGrantUsername ||
                 !props.zoneContextName ||
-                props.grantActions.length === 0
+                props.grantActions.length === 0 ||
+                props.isGrantChangeBlocked
               }
               type="submit"
             >
@@ -553,6 +567,11 @@ export function AdminConsole(props: AdminConsoleProps) {
             {!props.zoneContextName ? (
               <p className="status-error">
                 Select a zone in the workspace before saving a zone grant.
+              </p>
+            ) : null}
+            {props.isGrantChangeBlocked ? (
+              <p className="status-error">
+                Choose a non-admin account to manage zone-level grants.
               </p>
             ) : null}
             {props.assignGrantError ? (

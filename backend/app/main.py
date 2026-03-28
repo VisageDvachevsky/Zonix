@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 from secrets import token_urlsafe
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.access import (
     AccessService,
@@ -29,6 +31,7 @@ from app.domain.models import (
     ChangeSet,
     IdentityProvider,
     IdentityProviderKind,
+    PermissionGrant,
     RecordSet,
     Role,
     User,
@@ -102,6 +105,25 @@ def set_inventory_sync_state(
 
 CSRF_COOKIE_NAME = "zonix_csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
+ALLOWED_BROWSER_RETURN_ORIGINS = {
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+}
+
+
+def validate_browser_return_to(return_to: str | None) -> str | None:
+    if return_to is None:
+        return None
+    parsed = urlparse(return_to)
+    origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    if origin not in ALLOWED_BROWSER_RETURN_ORIGINS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="return_to origin is not allowed",
+        )
+    return return_to
 
 
 def set_auth_cookies(response: Response, session_token: str) -> None:
@@ -278,6 +300,21 @@ def synchronize_backend_inventory(
     )
 
 
+def synchronize_bootstrap_zone_grants(access_service: AccessService) -> None:
+    grants_by_user: dict[str, list[PermissionGrant]] = {}
+    for grant in settings.bootstrap_zone_grants:
+        username = str(grant["username"])
+        grants_by_user.setdefault(username, []).append(
+            PermissionGrant(
+                username=username,
+                zone_name=str(grant["zoneName"]),
+                actions=tuple(ZoneAction(str(action)) for action in grant["actions"]),
+            )
+        )
+    for username, grants in grants_by_user.items():
+        access_service.sync_zone_grants_for_user(username=username, grants=tuple(grants))
+
+
 def initialize_default_runtime(
     app: FastAPI,
     access_service: AccessService,
@@ -300,6 +337,7 @@ def initialize_default_runtime(
             zone_read_service,
             settings.powerdns_backend_name,
         )
+        synchronize_bootstrap_zone_grants(access_service)
     except (UpstreamReadError, ZoneAdapterNotConfiguredError) as error:
         set_inventory_sync_state(
             app,
@@ -645,13 +683,16 @@ def create_app(
         provider_name: str,
         request: Request,
         oidc_service: OIDCServiceDependency,
+        return_to: str | None = None,
     ) -> OIDCLoginStartResponse:
+        resolved_return_to = validate_browser_return_to(return_to)
         try:
             login_request = oidc_service.begin_login(
                 provider_name=provider_name,
                 redirect_uri=str(
                     request.url_for("complete_oidc_login", provider_name=provider_name)
                 ),
+                return_to=resolved_return_to,
             )
         except OIDCProviderNotFoundError as error:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
@@ -677,7 +718,12 @@ def create_app(
         audit_service: AuditServiceDependency,
         oidc_service: OIDCServiceDependency,
     ) -> AuthSessionResponse:
+        return_to: str | None = None
         try:
+            state_payload = oidc_service.state_manager.read(state, provider_name)
+            raw_return_to = state_payload.get("returnTo")
+            if isinstance(raw_return_to, str) and raw_return_to.strip():
+                return_to = raw_return_to.strip()
             identity = oidc_service.complete_login(
                 provider_name=provider_name,
                 code=code,
@@ -749,6 +795,10 @@ def create_app(
             action="login.success",
             payload={"role": user.role.value, "authSource": f"oidc:{provider_name}"},
         )
+        if return_to:
+            redirect_response = RedirectResponse(url=return_to, status_code=status.HTTP_303_SEE_OTHER)
+            set_auth_cookies(redirect_response, session_token)
+            return redirect_response
         set_auth_cookies(response, session_token)
         return AuthSessionResponse(
             authenticated=True,

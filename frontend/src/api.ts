@@ -50,6 +50,25 @@ export const authSettingsResponseSchema = z.object({
 
 export type AuthSettingsResponse = z.infer<typeof authSettingsResponseSchema>;
 
+export const oidcProviderSchema = z.object({
+  name: z.string().min(1),
+  kind: z.enum(["oidc"]),
+});
+
+export const oidcProviderListResponseSchema = z.object({
+  items: z.array(oidcProviderSchema),
+});
+
+export type OidcProviderListResponse = z.infer<typeof oidcProviderListResponseSchema>;
+export type OidcProvider = z.infer<typeof oidcProviderSchema>;
+
+export const oidcLoginStartResponseSchema = z.object({
+  providerName: z.string().min(1),
+  authorizationUrl: z.string().min(1),
+});
+
+export type OidcLoginStartResponse = z.infer<typeof oidcLoginStartResponseSchema>;
+
 export const loginRequestSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
@@ -66,6 +85,7 @@ export const backendListResponseSchema = z.object({
 });
 
 export type BackendListResponse = z.infer<typeof backendListResponseSchema>;
+export type Backend = z.infer<typeof backendSchema>;
 
 export const adminUserSchema = z.object({
   username: z.string().min(1),
@@ -79,6 +99,7 @@ export const adminUserListResponseSchema = z.object({
 });
 
 export type AdminUserListResponse = z.infer<typeof adminUserListResponseSchema>;
+export type AdminUser = z.infer<typeof adminUserSchema>;
 
 export const backendConfigRequestSchema = z.object({
   name: z.string().min(1),
@@ -103,6 +124,7 @@ export const identityProviderConfigListResponseSchema = z.object({
 export type IdentityProviderConfigListResponse = z.infer<
   typeof identityProviderConfigListResponseSchema
 >;
+export type IdentityProviderConfig = z.infer<typeof identityProviderConfigSchema>;
 
 export const zoneGrantSchema = z.object({
   username: z.string().min(1),
@@ -115,6 +137,7 @@ export const zoneGrantListResponseSchema = z.object({
 });
 
 export type ZoneGrantListResponse = z.infer<typeof zoneGrantListResponseSchema>;
+export type ZoneGrant = z.infer<typeof zoneGrantSchema>;
 
 export const zoneSchema = z.object({
   name: z.string().min(1),
@@ -126,6 +149,7 @@ export const zoneListResponseSchema = z.object({
 });
 
 export type ZoneListResponse = z.infer<typeof zoneListResponseSchema>;
+export type Zone = z.infer<typeof zoneSchema>;
 
 export const recordDraftSchema = z
   .object({
@@ -268,6 +292,8 @@ export const recordListResponseSchema = z.object({
 });
 
 export type RecordListResponse = z.infer<typeof recordListResponseSchema>;
+export type RecordSet = z.infer<typeof recordSetSchema>;
+export type RecordType = z.infer<typeof recordTypeSchema>;
 
 const fallbackApiBaseUrl =
   typeof window === "undefined"
@@ -370,6 +396,42 @@ export async function fetchAuthSettings(): Promise<AuthSettingsResponse> {
   }
 
   return authSettingsResponseSchema.parse(await response.json());
+}
+
+export async function fetchOidcProviders(): Promise<OidcProviderListResponse> {
+  const response = await fetch(`${apiBaseUrl}/auth/oidc/providers`, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`OIDC provider lookup failed with status ${response.status}`);
+  }
+
+  return oidcProviderListResponseSchema.parse(await response.json());
+}
+
+export async function startOidcLogin(input: {
+  providerName: string;
+  returnTo: string;
+}): Promise<OidcLoginStartResponse> {
+  const url = new URL(
+    `${apiBaseUrl}/auth/oidc/${encodeURIComponent(input.providerName)}/login`,
+  );
+  url.searchParams.set("return_to", input.returnTo);
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`OIDC login start failed with status ${response.status}`);
+  }
+
+  return oidcLoginStartResponseSchema.parse(await response.json());
 }
 
 export async function login(input: {
@@ -723,4 +785,100 @@ export async function fetchZoneRecords(
   }
 
   return recordListResponseSchema.parse(await response.json());
+}
+
+export async function createZoneRecord(input: {
+  zoneName: string;
+  name: string;
+  recordType: RecordType;
+  ttl: number;
+  values: string[];
+}) {
+  const payload = recordDraftSchema.parse(input);
+  const response = await fetch(
+    `${apiBaseUrl}/zones/${encodeURIComponent(payload.zoneName)}/records`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Record create failed with status ${response.status}`);
+  }
+
+  return recordSetSchema.parse(await response.json());
+}
+
+export async function updateZoneRecord(input: {
+  zoneName: string;
+  name: string;
+  recordType: RecordType;
+  ttl: number;
+  values: string[];
+  expectedVersion: string;
+}) {
+  const payload = recordDraftSchema
+    .extend({
+      expectedVersion: z.string().min(1),
+    })
+    .parse(input);
+  const response = await fetch(
+    `${apiBaseUrl}/zones/${encodeURIComponent(payload.zoneName)}/records`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Record update failed with status ${response.status}`);
+  }
+
+  return recordSetSchema.parse(await response.json());
+}
+
+export async function deleteZoneRecord(input: {
+  zoneName: string;
+  name: string;
+  recordType: RecordType;
+  expectedVersion: string;
+}) {
+  const payload = z
+    .object({
+      zoneName: z.string().min(1),
+      name: z.string().min(1),
+      recordType: recordTypeSchema,
+      expectedVersion: z.string().min(1),
+    })
+    .parse(input);
+  const response = await fetch(
+    `${apiBaseUrl}/zones/${encodeURIComponent(payload.zoneName)}/records`,
+    {
+      method: "DELETE",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Record delete failed with status ${response.status}`);
+  }
 }

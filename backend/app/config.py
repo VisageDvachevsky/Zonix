@@ -16,6 +16,34 @@ def env_flag(name: str, default: bool) -> bool:
     raise ValueError(f"{name} must be a boolean-like value")
 
 
+def _load_bootstrap_users() -> list[dict[str, object]]:
+    raw = getenv("ZONIX_BOOTSTRAP_USERS_JSON", "[]")
+    payload = loads(raw)
+    if not isinstance(payload, list):
+        raise ValueError("ZONIX_BOOTSTRAP_USERS_JSON must decode to an array")
+    normalized: list[dict[str, object]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("ZONIX_BOOTSTRAP_USERS_JSON entries must be objects")
+        normalized.append(dict(item))
+    return normalized
+
+
+def _load_bootstrap_zone_grants() -> list[dict[str, object]]:
+    raw = getenv("ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON", "[]")
+    payload = loads(raw)
+    if not isinstance(payload, list):
+        raise ValueError("ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON must decode to an array")
+    normalized: list[dict[str, object]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError(
+                "ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON entries must be objects"
+            )
+        normalized.append(dict(item))
+    return normalized
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = field(default_factory=lambda: getenv("ZONIX_APP_NAME", "Zonix API"))
@@ -103,6 +131,12 @@ class Settings:
     oidc_bootstrap_claims_mapping_rules: dict[str, object] = field(
         default_factory=lambda: loads(getenv("ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES", "{}"))
     )
+    bootstrap_users: tuple[dict[str, object], ...] = field(
+        default_factory=lambda: tuple(_load_bootstrap_users())
+    )
+    bootstrap_zone_grants: tuple[dict[str, object], ...] = field(
+        default_factory=lambda: tuple(_load_bootstrap_zone_grants())
+    )
 
     def __post_init__(self) -> None:
         if not self.session_cookie_name:
@@ -127,6 +161,53 @@ class Settings:
             raise ValueError("ZONIX_POWERDNS_TIMEOUT_SECONDS must be positive")
         if not isinstance(self.oidc_bootstrap_claims_mapping_rules, dict):
             raise ValueError("ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES must decode to an object")
+        for user in self.bootstrap_users:
+            username = user.get("username")
+            role = user.get("role")
+            auth_source = user.get("authSource", "local")
+            password = user.get("password", "")
+            is_active = user.get("isActive", True)
+            if not isinstance(username, str) or not username.strip():
+                raise ValueError("ZONIX_BOOTSTRAP_USERS_JSON entries must define username")
+            if role not in {"admin", "editor", "viewer"}:
+                raise ValueError("ZONIX_BOOTSTRAP_USERS_JSON entries must define a valid role")
+            if not isinstance(auth_source, str) or not auth_source.strip():
+                raise ValueError(
+                    "ZONIX_BOOTSTRAP_USERS_JSON entries must define authSource"
+                )
+            if auth_source == "local" and (not isinstance(password, str) or not password):
+                raise ValueError(
+                    "ZONIX_BOOTSTRAP_USERS_JSON local entries must define password"
+                )
+            if not isinstance(is_active, bool):
+                raise ValueError(
+                    "ZONIX_BOOTSTRAP_USERS_JSON entries must define boolean isActive"
+                )
+        for grant in self.bootstrap_zone_grants:
+            username = grant.get("username")
+            zone_name = grant.get("zoneName")
+            actions = grant.get("actions")
+            if not isinstance(username, str) or not username.strip():
+                raise ValueError(
+                    "ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON entries must define username"
+                )
+            if not isinstance(zone_name, str) or not zone_name.strip():
+                raise ValueError(
+                    "ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON entries must define zoneName"
+                )
+            if not isinstance(actions, list) or not actions:
+                raise ValueError(
+                    "ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON entries must define actions"
+                )
+            invalid_actions = [
+                action
+                for action in actions
+                if action not in {"read", "write", "grant"}
+            ]
+            if invalid_actions:
+                raise ValueError(
+                    "ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON entries contain invalid actions"
+                )
         if self.bootstrap_admin_enabled and not self.bootstrap_admin_password:
             raise ValueError(
                 "ZONIX_BOOTSTRAP_ADMIN_PASSWORD must not be empty when bootstrap is enabled"

@@ -5,11 +5,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from hmac import compare_digest
 from hmac import new as hmac_new
+from ipaddress import ip_address
 from json import dumps, loads
 from time import time
 from typing import Any
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import urlencode, urlparse
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 from app.domain.models import IdentityProvider, PermissionGrant, Role, ZoneAction
 from app.identity_providers import IdentityProviderService
@@ -55,16 +56,18 @@ class OIDCStateManager:
         self.secret_key = secret_key.encode("utf-8")
         self.ttl_seconds = ttl_seconds
 
-    def issue(self, provider_name: str) -> str:
+    def issue(self, provider_name: str, *, return_to: str | None = None) -> str:
         payload = {
             "provider": provider_name,
             "exp": int(time()) + self.ttl_seconds,
         }
+        if return_to:
+            payload["returnTo"] = return_to
         encoded_payload = self._encode_json(payload)
         signature = self._sign(encoded_payload)
         return f"{encoded_payload}.{signature}"
 
-    def validate(self, state: str, provider_name: str) -> None:
+    def read(self, state: str, provider_name: str) -> dict[str, object]:
         if "." not in state:
             raise OIDCStateError("oidc state is malformed")
         encoded_payload, signature = state.split(".", maxsplit=1)
@@ -77,6 +80,10 @@ class OIDCStateManager:
             raise OIDCStateError("oidc state has expired")
         if str(payload["provider"]) != provider_name:
             raise OIDCStateError("oidc state does not match provider")
+        return payload
+
+    def validate(self, state: str, provider_name: str) -> None:
+        self.read(state, provider_name)
 
     def _sign(self, encoded_payload: str) -> str:
         digest = hmac_new(self.secret_key, encoded_payload.encode("ascii"), sha256).digest()
@@ -100,7 +107,7 @@ class OIDCStateManager:
 class OIDCClient:
     def fetch_json(self, url: str, headers: dict[str, str] | None = None) -> dict[str, object]:
         request = Request(url, headers=headers or {}, method="GET")
-        with urlopen(request, timeout=5.0) as response:
+        with self._open(request) as response:
             payload = loads(response.read().decode("utf-8"))
         if not isinstance(payload, dict):
             raise OIDCExchangeError("oidc endpoint returned non-object json")
@@ -113,11 +120,30 @@ class OIDCClient:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             method="POST",
         )
-        with urlopen(request, timeout=5.0) as response:
+        with self._open(request) as response:
             payload = loads(response.read().decode("utf-8"))
         if not isinstance(payload, dict):
             raise OIDCExchangeError("oidc token endpoint returned non-object json")
         return payload
+
+    def _open(self, request: Request):
+        if self._should_bypass_proxies(request.full_url):
+            opener = build_opener(ProxyHandler({}))
+            return opener.open(request, timeout=5.0)
+        return urlopen(request, timeout=5.0)
+
+    @staticmethod
+    def _should_bypass_proxies(url: str) -> bool:
+        hostname = urlparse(url).hostname
+        if not hostname:
+            return False
+        if hostname == "localhost":
+            return True
+        try:
+            resolved = ip_address(hostname)
+        except ValueError:
+            return False
+        return resolved.is_loopback or resolved.is_private or resolved.is_link_local
 
 
 class OIDCService:
@@ -134,10 +160,16 @@ class OIDCService:
     def list_providers(self) -> tuple[IdentityProvider, ...]:
         return self.identity_provider_service.list_providers()
 
-    def begin_login(self, provider_name: str, redirect_uri: str) -> OIDCLoginRequest:
+    def begin_login(
+        self,
+        provider_name: str,
+        redirect_uri: str,
+        *,
+        return_to: str | None = None,
+    ) -> OIDCLoginRequest:
         provider = self._require_provider(provider_name)
         metadata = self._discover(provider)
-        state = self.state_manager.issue(provider.name)
+        state = self.state_manager.issue(provider.name, return_to=return_to)
         authorization_endpoint = self._require_string(metadata, "authorization_endpoint")
         query = urlencode(
             {

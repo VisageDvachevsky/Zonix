@@ -1,0 +1,165 @@
+{
+  "realm": "zonix",
+  "enabled": true,
+  "displayName": "Zonix Dev Realm",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "verifyEmail": false,
+  "clients": [
+    {
+      "clientId": "zonix-ui",
+      "name": "Zonix UI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "super-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/auth/oidc/corp-oidc/callback",
+        "http://127.0.0.1:8000/auth/oidc/corp-oidc/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+      ],
+      "protocolMappers": [
+        {
+          "name": "preferred-username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "email",
+        "roles",
+        "groups"
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "groups",
+      "description": "Expose group membership to Zonix",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "dns-admins"
+    },
+    {
+      "name": "zone-example.com-editors"
+    },
+    {
+      "name": "zone-internal.example-viewers"
+    }
+  ],
+  "users": [
+    {
+      "username": "oidc.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "oidc.admin@zonix.local",
+      "firstName": "OIDC",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "dns-admins"
+      ]
+    },
+    {
+      "username": "oidc.editor",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "oidc.editor@zonix.local",
+      "firstName": "OIDC",
+      "lastName": "Editor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "editor",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "zone-example.com-editors"
+      ]
+    },
+    {
+      "username": "oidc.viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "oidc.viewer@zonix.local",
+      "firstName": "OIDC",
+      "lastName": "Viewer",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viewer",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "zone-internal.example-viewers"
+      ]
+    }
+  ]
+}

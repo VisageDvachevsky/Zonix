@@ -106,6 +106,48 @@ def ensure_bootstrap_oidc_provider(
     return True
 
 
+def ensure_bootstrap_users(
+    users: tuple[dict[str, object], ...] | None = None,
+    database_url: str | None = None,
+    connect_fn: Callable[[str | None], Any] = connect,
+) -> int:
+    resolved_users = settings.bootstrap_users if users is None else users
+    if not resolved_users:
+        return 0
+
+    with connect_fn(database_url or settings.database_url) as connection:
+        with connection.cursor() as cursor:
+            for entry in resolved_users:
+                username = str(entry["username"])
+                auth_source = str(entry.get("authSource", "local"))
+                password_hash = (
+                    hash_password(str(entry["password"]))
+                    if auth_source == "local"
+                    else ""
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO users (username, password_hash, role, auth_source, is_active)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (username) DO UPDATE
+                    SET password_hash = EXCLUDED.password_hash,
+                        role = EXCLUDED.role,
+                        auth_source = EXCLUDED.auth_source,
+                        is_active = EXCLUDED.is_active
+                    """,
+                    (
+                        username,
+                        password_hash,
+                        str(entry["role"]),
+                        auth_source,
+                        bool(entry.get("isActive", True)),
+                    ),
+                )
+        connection.commit()
+
+    return len(resolved_users)
+
+
 def main() -> None:
     created = ensure_bootstrap_admin()
     if settings.bootstrap_admin_enabled and created:
@@ -114,6 +156,10 @@ def main() -> None:
         print(f"Bootstrap admin '{settings.bootstrap_admin_username}' already exists")
     else:
         print("Bootstrap admin provisioning is disabled")
+
+    provisioned_users = ensure_bootstrap_users()
+    if provisioned_users > 0:
+        print(f"Bootstrapped {provisioned_users} additional development user(s)")
 
     oidc_bootstrapped = ensure_bootstrap_oidc_provider()
     if oidc_bootstrapped:

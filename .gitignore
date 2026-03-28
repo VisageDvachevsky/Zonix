@@ -14,4 +14,6 @@ frontend/node_modules/
 frontend/tsconfig.tsbuildinfo
 *.log
 mitm_mcp_traffic.db
+backend/pytest-cache-files-*/
+deploy/powerdns/data/
 plan.txt

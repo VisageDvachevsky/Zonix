@@ -27,6 +27,33 @@ services:
       - ./powerdns/start-powerdns.sh:/usr/local/bin/start-powerdns.sh:ro
       - ./powerdns/data:/var/lib/powerdns
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1.4
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:9010
+      KC_PROXY_HEADERS: xforwarded
+    command:
+      - start-dev
+      - --import-realm
+    volumes:
+      - ./keycloak/zonix-realm.json:/opt/keycloak/data/import/zonix-realm.json:ro
+
+  oidc-gateway:
+    build:
+      context: ./oidc-gateway
+    environment:
+      OIDC_GATEWAY_PUBLIC_BASE_URL: http://localhost:9010
+      OIDC_GATEWAY_INTERNAL_BASE_URL: http://oidc-gateway:9000
+      OIDC_GATEWAY_UPSTREAM_BASE_URL: http://keycloak:8080
+    depends_on:
+      - keycloak
+    ports:
+      - "9010:9000"
+
   backend:
     build:
       context: ../backend
@@ -41,6 +68,22 @@ services:
       ZONIX_SESSION_COOKIE_SECURE: "false"
       ZONIX_SESSION_TTL_SECONDS: 43200
       ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED: "false"
+      ZONIX_BOOTSTRAP_USERS_JSON: >-
+        [{"username":"alice","password":"editor","role":"editor","authSource":"local"},
+        {"username":"bob","password":"viewer","role":"viewer","authSource":"local"},
+        {"username":"oidc.admin","role":"admin","authSource":"oidc:corp-oidc"},
+        {"username":"oidc.editor","role":"editor","authSource":"oidc:corp-oidc"},
+        {"username":"oidc.viewer","role":"viewer","authSource":"oidc:corp-oidc"}]
+      ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON: >-
+        [{"username":"alice","zoneName":"example.com","actions":["write"]},
+        {"username":"bob","zoneName":"internal.example","actions":["read"]}]
+      ZONIX_OIDC_BOOTSTRAP_NAME: corp-oidc
+      ZONIX_OIDC_BOOTSTRAP_ISSUER: http://oidc-gateway:9000/realms/zonix
+      ZONIX_OIDC_BOOTSTRAP_CLIENT_ID: zonix-ui
+      ZONIX_OIDC_BOOTSTRAP_CLIENT_SECRET: super-secret
+      ZONIX_OIDC_BOOTSTRAP_SCOPES: openid,groups
+      ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES: >-
+        {"usernameClaim":"preferred_username","rolesClaim":"groups","adminGroups":["dns-admins"],"zoneEditorPattern":"zone-{zone}-editors","zoneViewerPattern":"zone-{zone}-viewers"}
       ZONIX_POWERDNS_BACKEND_NAME: powerdns-local
       ZONIX_POWERDNS_API_URL: http://powerdns:8081
       ZONIX_POWERDNS_API_KEY: zonix-dev-powerdns-key
@@ -49,6 +92,7 @@ services:
     depends_on:
       - postgres
       - powerdns
+      - oidc-gateway
     ports:
       - "8000:8000"
 
