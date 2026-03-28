@@ -51,7 +51,10 @@ class ZoneReadService:
         zones: list[Zone] = []
 
         for backend in self.access_service.backend_repository.list_all():
-            adapter = self._get_adapter(backend)
+            try:
+                adapter = self._get_adapter(backend)
+            except ZoneAdapterNotConfiguredError:
+                continue
             for zone in adapter.list_zones():
                 if granted_zone_names is None or zone.name in granted_zone_names:
                     zones.append(zone)
@@ -73,7 +76,10 @@ class ZoneReadService:
         granted_zone_names = self._granted_zone_names(user)
 
         for backend in self.access_service.backend_repository.list_all():
-            adapter = self._get_adapter(backend)
+            try:
+                adapter = self._get_adapter(backend)
+            except ZoneAdapterNotConfiguredError:
+                continue
             zone = adapter.get_zone(zone_name)
             if zone is None:
                 continue

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from json import JSONDecodeError, loads
+from http.client import HTTPConnection, HTTPResponse, HTTPSConnection
+from json import JSONDecodeError, dumps, loads
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 
 from app.domain.models import RecordSet, Zone
 from app.zone_reads import UpstreamReadError
@@ -26,6 +26,7 @@ class PowerDNSConnectionError(PowerDNSClientError):
 
 
 PowerDNSFetcher = Callable[[str, Mapping[str, str], float], object]
+PowerDNSWriteFetcher = Callable[[str, Mapping[str, str], float, bytes], None]
 
 
 class PowerDNSClient:
@@ -36,6 +37,7 @@ class PowerDNSClient:
         server_id: str,
         timeout_seconds: float = 5.0,
         fetcher: PowerDNSFetcher | None = None,
+        write_fetcher: PowerDNSWriteFetcher | None = None,
     ) -> None:
         if not api_url:
             raise ValueError("PowerDNS API URL must not be empty")
@@ -51,6 +53,7 @@ class PowerDNSClient:
         self.server_id = server_id
         self.timeout_seconds = timeout_seconds
         self.fetcher = fetcher or self._default_fetcher
+        self.write_fetcher = write_fetcher or self._default_write_fetcher
 
     def list_zones(self) -> object:
         return self._get(f"/servers/{quote(self.server_id, safe='')}/zones")
@@ -59,6 +62,25 @@ class PowerDNSClient:
         zone_id = self._encode_zone_id(zone_name)
         try:
             return self._get(f"/servers/{quote(self.server_id, safe='')}/zones/{zone_id}")
+        except PowerDNSResponseError as error:
+            if error.status_code == 404:
+                return None
+            raise
+
+    def patch_zone(self, zone_name: str, payload: Mapping[str, Any]) -> None:
+        zone_id = self._encode_zone_id(zone_name)
+        raw_body = dumps(payload).encode("utf-8")
+        try:
+            self.write_fetcher(
+                f"{self.api_url}/api/v1/servers/{quote(self.server_id, safe='')}/zones/{zone_id}",
+                {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "X-API-Key": self.api_key,
+                },
+                self.timeout_seconds,
+                raw_body,
+            )
         except PowerDNSResponseError as error:
             if error.status_code == 404:
                 return None
@@ -81,21 +103,74 @@ class PowerDNSClient:
 
     @staticmethod
     def _default_fetcher(url: str, headers: Mapping[str, str], timeout_seconds: float) -> object:
-        request = Request(url=url, method="GET", headers=dict(headers))
-
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:
-                raw_body = response.read().decode("utf-8")
-        except HTTPError as error:
-            raw_body = error.read().decode("utf-8", errors="ignore")
-            raise PowerDNSResponseError(error.code, raw_body or error.reason) from error
-        except URLError as error:
-            raise PowerDNSConnectionError(str(error.reason)) from error
+            raw_body = PowerDNSClient._perform_http_request(
+                url=url,
+                method="GET",
+                headers=headers,
+                timeout_seconds=timeout_seconds,
+            )
+        except OSError as error:
+            raise PowerDNSConnectionError(str(error)) from error
 
         try:
             return loads(raw_body)
         except JSONDecodeError as error:
             raise PowerDNSClientError("PowerDNS returned invalid JSON") from error
+
+    @staticmethod
+    def _default_write_fetcher(
+        url: str,
+        headers: Mapping[str, str],
+        timeout_seconds: float,
+        body: bytes,
+    ) -> None:
+        try:
+            PowerDNSClient._perform_http_request(
+                url=url,
+                method="PATCH",
+                headers=headers,
+                timeout_seconds=timeout_seconds,
+                body=body,
+            )
+        except OSError as error:
+            raise PowerDNSConnectionError(str(error)) from error
+
+    @staticmethod
+    def _perform_http_request(
+        *,
+        url: str,
+        method: str,
+        headers: Mapping[str, str],
+        timeout_seconds: float,
+        body: bytes | None = None,
+    ) -> str:
+        parsed = urlsplit(url)
+        if not parsed.hostname:
+            raise PowerDNSClientError("PowerDNS request URL is missing a hostname")
+
+        connection_class = HTTPSConnection if parsed.scheme == "https" else HTTPConnection
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+
+        connection = connection_class(parsed.hostname, port, timeout=timeout_seconds)
+        try:
+            connection.request(method, path, body=body, headers=dict(headers))
+            response = connection.getresponse()
+            raw_body = response.read().decode("utf-8", errors="ignore")
+        finally:
+            connection.close()
+
+        PowerDNSClient._raise_for_status(response, raw_body)
+        return raw_body
+
+    @staticmethod
+    def _raise_for_status(response: HTTPResponse, raw_body: str) -> None:
+        if 200 <= response.status < 300:
+            return
+        raise PowerDNSResponseError(response.status, raw_body or response.reason or "HTTP error")
 
 
 class PowerDNSReadAdapter:
@@ -157,6 +232,31 @@ class PowerDNSReadAdapter:
 
         return tuple(sorted(record_sets, key=lambda record: (record.name, record.record_type)))
 
+    def create_record_set(self, record_set: RecordSet) -> RecordSet:
+        self._patch_rrset(record_set, changetype="REPLACE")
+        return record_set
+
+    def update_record_set(self, record_set: RecordSet) -> RecordSet:
+        self._patch_rrset(record_set, changetype="REPLACE")
+        return record_set
+
+    def delete_record_set(self, zone_name: str, name: str, record_type: str) -> None:
+        try:
+            self.client.patch_zone(
+                zone_name,
+                {
+                    "rrsets": [
+                        {
+                            "name": self._to_absolute_record_name(zone_name, name),
+                            "type": record_type.upper(),
+                            "changetype": "DELETE",
+                        }
+                    ]
+                },
+            )
+        except PowerDNSClientError as error:
+            raise UpstreamReadError(self.backend_name, str(error)) from error
+
     def _read_zones_payload(self) -> list[Mapping[str, Any]]:
         try:
             payload = self.client.list_zones()
@@ -212,6 +312,38 @@ class PowerDNSReadAdapter:
         if normalized.endswith(suffix):
             return normalized[: -len(suffix)]
         return normalized
+
+    @classmethod
+    def _to_absolute_record_name(cls, zone_name: str, rr_name: str) -> str:
+        normalized_zone_name = cls._normalize_dns_name(zone_name)
+        normalized_rr_name = cls._normalize_dns_name(rr_name)
+        if normalized_rr_name == "@":
+            return f"{normalized_zone_name}."
+        if normalized_rr_name.endswith(f".{normalized_zone_name}") or normalized_rr_name == normalized_zone_name:
+            return f"{normalized_rr_name}."
+        return f"{normalized_rr_name}.{normalized_zone_name}."
+
+    def _patch_rrset(self, record_set: RecordSet, *, changetype: str) -> None:
+        try:
+            self.client.patch_zone(
+                record_set.zone_name,
+                {
+                    "rrsets": [
+                        {
+                            "name": self._to_absolute_record_name(record_set.zone_name, record_set.name),
+                            "type": record_set.record_type,
+                            "ttl": record_set.ttl,
+                            "changetype": changetype,
+                            "records": [
+                                {"content": value, "disabled": False}
+                                for value in record_set.values
+                            ],
+                        }
+                    ]
+                },
+            )
+        except PowerDNSClientError as error:
+            raise UpstreamReadError(self.backend_name, str(error)) from error
 
     @staticmethod
     def _require_str(payload: Mapping[str, Any], key: str) -> str:

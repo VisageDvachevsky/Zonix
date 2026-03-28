@@ -13,27 +13,19 @@ services:
   powerdns:
     image: powerdns/pdns-auth-49:latest
     entrypoint:
-      - /usr/local/sbin/pdns_server
+      - /bin/sh
+      - /usr/local/bin/start-powerdns.sh
     command:
-      - --config-dir=/etc/pdns-zonix
-      - --daemon=no
-      - --disable-syslog=yes
-      - --launch=bind
-      - --bind-check-interval=0
-      - --api=yes
-      - --api-key=zonix-dev-powerdns-key
-      - --webserver=yes
-      - --webserver-address=0.0.0.0
-      - --webserver-port=8081
-      - --local-address=0.0.0.0
-      - --local-port=5300
+      - -eu
     ports:
       - "8081:8081"
       - "5300:5300/tcp"
       - "5300:5300/udp"
     volumes:
       - ./powerdns/config:/etc/pdns-zonix:ro
-      - ./powerdns/zones:/etc/pdns/zones:ro
+      - ./powerdns/init:/etc/pdns-init:ro
+      - ./powerdns/start-powerdns.sh:/usr/local/bin/start-powerdns.sh:ro
+      - ./powerdns/data:/var/lib/powerdns
 
   backend:
     build:
@@ -42,8 +34,8 @@ services:
       ZONIX_ENV: development
       ZONIX_DATABASE_URL: postgresql://zonix:zonix@postgres:5432/zonix
       ZONIX_BOOTSTRAP_ADMIN_USERNAME: admin
-      ZONIX_BOOTSTRAP_ADMIN_PASSWORD: admin
-      ZONIX_SESSION_SECRET_KEY: zonix-dev-session-secret
+      ZONIX_BOOTSTRAP_ADMIN_PASSWORD: local-dev-admin-change-me
+      ZONIX_SESSION_SECRET_KEY: local-dev-session-secret-change-me-32-bytes
       ZONIX_SESSION_TTL_SECONDS: 43200
       ZONIX_POWERDNS_BACKEND_NAME: powerdns-local
       ZONIX_POWERDNS_API_URL: http://powerdns:8081

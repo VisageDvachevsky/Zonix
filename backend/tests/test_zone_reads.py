@@ -141,6 +141,23 @@ class ZoneReadServiceTests(unittest.TestCase):
         self.assertEqual([zone.name for zone in editor_zones], ["example.com"])
         self.assertEqual([zone.name for zone in viewer_zones], ["lab.example"])
 
+    def test_backends_without_read_adapters_are_skipped(self) -> None:
+        self.access_service.register_backend(
+            Backend(
+                name="manual-bind",
+                backend_type="rfc2136-bind",
+                capabilities=(BackendCapability.READ_ZONES,),
+            )
+        )
+        self.access_service.register_zone(Zone(name="manual.example", backend_name="manual-bind"))
+
+        zones = self.service.list_zones(User(username="admin", role=Role.ADMIN))
+
+        self.assertEqual(
+            [zone.name for zone in zones],
+            ["example.com", "internal.example", "lab.example"],
+        )
+
     def test_zone_detail_and_records_use_normalized_models(self) -> None:
         zone = self.service.get_zone(User(username="admin", role=Role.ADMIN), "example.com")
         records = self.service.list_records(User(username="admin", role=Role.ADMIN), "example.com")

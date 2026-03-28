@@ -45,6 +45,10 @@ Core fields:
 - `name`
 - `kind`
 - `issuer`
+- `client_id`
+- `client_secret`
+- `scopes`
+- `claims_mapping_rules`
 
 ### Backend
 

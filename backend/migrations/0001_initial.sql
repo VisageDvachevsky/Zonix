@@ -11,8 +11,10 @@ CREATE TABLE IF NOT EXISTS identity_providers (
     name TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
     issuer TEXT NOT NULL,
-    client_id TEXT,
-    client_secret TEXT,
+    client_id TEXT NOT NULL,
+    client_secret TEXT NOT NULL,
+    scopes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    claims_mapping_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

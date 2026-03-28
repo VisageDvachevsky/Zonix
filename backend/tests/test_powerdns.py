@@ -1,5 +1,7 @@
 import unittest
+from json import loads
 
+from app.domain.models import RecordSet
 from app.powerdns import (
     PowerDNSClient,
     PowerDNSConnectionError,
@@ -110,6 +112,79 @@ class PowerDNSReadAdapterTests(unittest.TestCase):
         )
 
         self.assertIsNone(adapter.get_zone("example.com"))
+
+    def test_adapter_writes_patch_payload_for_replace_and_delete(self) -> None:
+        write_calls: list[tuple[str, dict[str, str], float, bytes]] = []
+
+        def write_fetcher(
+            url: str,
+            headers: dict[str, str],
+            timeout: float,
+            body: bytes,
+        ) -> None:
+            write_calls.append((url, headers, timeout, body))
+
+        adapter = PowerDNSReadAdapter(
+            backend_name="powerdns-local",
+            client=PowerDNSClient(
+                api_url="http://powerdns:8081",
+                api_key="test-key",
+                server_id="localhost",
+                fetcher=lambda *_args: [],
+                write_fetcher=write_fetcher,
+            ),
+        )
+
+        adapter.create_record_set(
+            RecordSet(
+                zone_name="example.com",
+                name="www",
+                record_type="A",
+                ttl=300,
+                values=("192.0.2.10",),
+            )
+        )
+        adapter.delete_record_set("example.com", "www", "A")
+
+        self.assertEqual(len(write_calls), 2)
+        replace_payload = loads(write_calls[0][3].decode("utf-8"))
+        delete_payload = loads(write_calls[1][3].decode("utf-8"))
+        self.assertEqual(replace_payload["rrsets"][0]["changetype"], "REPLACE")
+        self.assertEqual(replace_payload["rrsets"][0]["name"], "www.example.com.")
+        self.assertEqual(replace_payload["rrsets"][0]["records"][0]["content"], "192.0.2.10")
+        self.assertEqual(delete_payload["rrsets"][0]["changetype"], "DELETE")
+        self.assertEqual(delete_payload["rrsets"][0]["type"], "A")
+
+    def test_adapter_converts_write_failures_into_upstream_errors(self) -> None:
+        def write_fetcher(
+            _url: str,
+            _headers: dict[str, str],
+            _timeout: float,
+            _body: bytes,
+        ) -> None:
+            raise PowerDNSConnectionError("write failed")
+
+        adapter = PowerDNSReadAdapter(
+            backend_name="powerdns-local",
+            client=PowerDNSClient(
+                api_url="http://powerdns:8081",
+                api_key="test-key",
+                server_id="localhost",
+                fetcher=lambda *_args: [],
+                write_fetcher=write_fetcher,
+            ),
+        )
+
+        with self.assertRaisesRegex(UpstreamReadError, "write failed"):
+            adapter.create_record_set(
+                RecordSet(
+                    zone_name="example.com",
+                    name="api",
+                    record_type="TXT",
+                    ttl=300,
+                    values=('"test"',),
+                )
+            )
 
 
 if __name__ == "__main__":

@@ -1,12 +1,14 @@
 import unittest
 
-from app.bootstrap import ensure_bootstrap_admin
+from app.bootstrap import ensure_bootstrap_admin, ensure_bootstrap_oidc_provider
+from app.domain.models import IdentityProvider, IdentityProviderKind
 from app.security import verify_password
 
 
 class InMemoryBootstrapConnection:
     def __init__(self) -> None:
         self.users: dict[str, dict[str, object]] = {}
+        self.identity_providers: dict[str, dict[str, object]] = {}
         self.committed = False
 
     def __enter__(self) -> InMemoryBootstrapConnection:
@@ -50,6 +52,27 @@ class InMemoryBootstrapCursor:
             }
             return
 
+        if normalized.startswith("INSERT INTO identity_providers"):
+            (
+                name,
+                kind,
+                issuer,
+                client_id,
+                client_secret,
+                scopes,
+                claims_mapping_rules,
+            ) = params
+            self.connection.identity_providers[name] = {
+                "name": name,
+                "kind": kind,
+                "issuer": issuer,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "scopes": list(scopes),
+                "claims_mapping_rules": __import__("json").loads(str(claims_mapping_rules)),
+            }
+            return
+
         raise AssertionError(f"unexpected query: {normalized}")
 
     def fetchone(self) -> tuple[str] | None:
@@ -80,6 +103,33 @@ class BootstrapAdminTests(unittest.TestCase):
             connect_fn=connect_stub,
         )
         self.assertFalse(created_again)
+
+    def test_ensure_bootstrap_oidc_provider_upserts_provider_configuration(self) -> None:
+        connection = InMemoryBootstrapConnection()
+
+        def connect_stub(_database_url: str | None = None) -> InMemoryBootstrapConnection:
+            return connection
+
+        created = ensure_bootstrap_oidc_provider(
+            provider=IdentityProvider(
+                name="corp-oidc",
+                kind=IdentityProviderKind.OIDC,
+                issuer="https://issuer.example",
+                clientId="zonix-ui",
+                clientSecret="super-secret",
+                scopes=("openid", "profile", "email"),
+                claimsMappingRules={
+                    "rolesClaim": "groups",
+                    "adminGroups": ["dns-admins"],
+                },
+            ),
+            connect_fn=connect_stub,
+        )
+
+        self.assertTrue(created)
+        self.assertTrue(connection.committed)
+        self.assertIn("corp-oidc", connection.identity_providers)
+        self.assertEqual(connection.identity_providers["corp-oidc"]["client_id"], "zonix-ui")
 
 
 if __name__ == "__main__":

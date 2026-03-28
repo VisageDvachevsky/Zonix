@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
+from json import loads
 from os import getenv
+from secrets import token_urlsafe
 
 
 @dataclass(frozen=True)
@@ -17,13 +19,13 @@ class Settings:
         default_factory=lambda: getenv("ZONIX_BOOTSTRAP_ADMIN_USERNAME", "admin")
     )
     bootstrap_admin_password: str = field(
-        default_factory=lambda: getenv("ZONIX_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+        default_factory=lambda: getenv("ZONIX_BOOTSTRAP_ADMIN_PASSWORD") or token_urlsafe(18)
     )
     session_cookie_name: str = field(
         default_factory=lambda: getenv("ZONIX_SESSION_COOKIE_NAME", "zonix_session")
     )
     session_secret_key: str = field(
-        default_factory=lambda: getenv("ZONIX_SESSION_SECRET_KEY", "zonix-dev-session-secret")
+        default_factory=lambda: getenv("ZONIX_SESSION_SECRET_KEY") or token_urlsafe(32)
     )
     session_ttl_seconds: int = field(
         default_factory=lambda: int(getenv("ZONIX_SESSION_TTL_SECONDS", str(60 * 60 * 12)))
@@ -43,6 +45,28 @@ class Settings:
     powerdns_timeout_seconds: float = field(
         default_factory=lambda: float(getenv("ZONIX_POWERDNS_TIMEOUT_SECONDS", "5"))
     )
+    oidc_bootstrap_name: str = field(
+        default_factory=lambda: getenv("ZONIX_OIDC_BOOTSTRAP_NAME", "")
+    )
+    oidc_bootstrap_issuer: str = field(
+        default_factory=lambda: getenv("ZONIX_OIDC_BOOTSTRAP_ISSUER", "")
+    )
+    oidc_bootstrap_client_id: str = field(
+        default_factory=lambda: getenv("ZONIX_OIDC_BOOTSTRAP_CLIENT_ID", "")
+    )
+    oidc_bootstrap_client_secret: str = field(
+        default_factory=lambda: getenv("ZONIX_OIDC_BOOTSTRAP_CLIENT_SECRET", "")
+    )
+    oidc_bootstrap_scopes: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            scope.strip()
+            for scope in getenv("ZONIX_OIDC_BOOTSTRAP_SCOPES", "openid,profile,email").split(",")
+            if scope.strip()
+        )
+    )
+    oidc_bootstrap_claims_mapping_rules: dict[str, object] = field(
+        default_factory=lambda: loads(getenv("ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES", "{}"))
+    )
 
     def __post_init__(self) -> None:
         if not self.session_cookie_name:
@@ -59,6 +83,8 @@ class Settings:
             raise ValueError("ZONIX_POWERDNS_SERVER_ID must not be empty")
         if self.powerdns_timeout_seconds <= 0:
             raise ValueError("ZONIX_POWERDNS_TIMEOUT_SECONDS must be positive")
+        if not isinstance(self.oidc_bootstrap_claims_mapping_rules, dict):
+            raise ValueError("ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES must decode to an object")
 
         if self.environment != "development":
             if self.session_secret_key == "zonix-dev-session-secret":

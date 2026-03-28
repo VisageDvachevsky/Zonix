@@ -28,6 +28,8 @@ class BackendRepository(Protocol):
 
     def get_by_name(self, name: str) -> Backend | None: ...
 
+    def delete(self, name: str) -> bool: ...
+
 
 class ZoneRepository(Protocol):
     def add(self, zone: Zone) -> None: ...
@@ -43,6 +45,12 @@ class PermissionGrantRepository(Protocol):
     def upsert(self, grant: PermissionGrant) -> None: ...
 
     def list_for_user(self, username: str) -> tuple[PermissionGrant, ...]: ...
+
+    def replace_for_user(
+        self,
+        username: str,
+        grants: Iterable[PermissionGrant],
+    ) -> tuple[PermissionGrant, ...]: ...
 
 
 @dataclass
@@ -68,6 +76,9 @@ class InMemoryBackendRepository:
 
     def get_by_name(self, name: str) -> Backend | None:
         return self.backends.get(name)
+
+    def delete(self, name: str) -> bool:
+        return self.backends.pop(name, None) is not None
 
 
 @dataclass
@@ -113,6 +124,25 @@ class InMemoryPermissionGrantRepository:
             if grant_username == username
         ]
         return tuple(sorted(matches, key=lambda grant: grant.zone_name))
+
+    def replace_for_user(
+        self,
+        username: str,
+        grants: Iterable[PermissionGrant],
+    ) -> tuple[PermissionGrant, ...]:
+        retained = {
+            key: value
+            for key, value in self.grants.items()
+            if key[0] != username
+        }
+        synchronized = {
+            (grant.username, grant.zone_name): grant
+            for grant in grants
+            if grant.username == username
+        }
+        retained.update(synchronized)
+        self.grants = retained
+        return tuple(sorted(synchronized.values(), key=lambda grant: grant.zone_name))
 
 
 class DatabaseBackendRepository:
@@ -171,6 +201,22 @@ class DatabaseBackendRepository:
                 row = cursor.fetchone()
 
         return None if row is None else self._map_backend(row)
+
+    def delete(self, name: str) -> bool:
+        with self.connect_fn(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM backends
+                    WHERE name = %s
+                    RETURNING name
+                    """,
+                    (name,),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+
+        return row is not None
 
     @staticmethod
     def _map_backend(row: tuple[object, object, object]) -> Backend:
@@ -326,6 +372,40 @@ class DatabasePermissionGrantRepository:
             for row in rows
         )
 
+    def replace_for_user(
+        self,
+        username: str,
+        grants: Iterable[PermissionGrant],
+    ) -> tuple[PermissionGrant, ...]:
+        normalized_grants = tuple(
+            sorted(
+                (grant for grant in grants if grant.username == username),
+                key=lambda grant: grant.zone_name,
+            )
+        )
+
+        with self.connect_fn(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM permission_grants WHERE username = %s",
+                    (username,),
+                )
+                for grant in normalized_grants:
+                    cursor.execute(
+                        """
+                        INSERT INTO permission_grants (username, zone_name, actions)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (
+                            grant.username,
+                            grant.zone_name,
+                            [action.value for action in grant.actions],
+                        ),
+                    )
+            connection.commit()
+
+        return normalized_grants
+
 
 class AccessService:
     def __init__(
@@ -345,6 +425,10 @@ class AccessService:
     def register_backend(self, backend: Backend) -> Backend:
         self.backend_repository.add(backend)
         return backend
+
+    def delete_backend(self, backend_name: str) -> None:
+        if not self.backend_repository.delete(backend_name):
+            raise ValueError(f"backend '{backend_name}' is not registered")
 
     def register_zone(self, zone: Zone) -> Zone:
         if self.backend_repository.get_by_name(zone.backend_name) is None:
@@ -415,6 +499,33 @@ class AccessService:
 
     def list_zone_grants_for_user(self, username: str) -> tuple[PermissionGrant, ...]:
         return self.grant_repository.list_for_user(username)
+
+    def sync_zone_grants_for_user(
+        self,
+        *,
+        username: str,
+        grants: Iterable[PermissionGrant],
+    ) -> tuple[PermissionGrant, ...]:
+        user = self.user_repository.get_by_username(username)
+        if user is None:
+            raise ValueError(f"user '{username}' does not exist")
+
+        normalized_grants: list[PermissionGrant] = []
+        for grant in grants:
+            if grant.username != username:
+                raise ValueError("grant username must match target user")
+            zone = self.zone_repository.get_by_name(grant.zone_name)
+            if zone is None:
+                raise ValueError(f"zone '{grant.zone_name}' is not registered")
+            normalized_grants.append(
+                PermissionGrant(
+                    username=username,
+                    zone_name=zone.name,
+                    actions=self._normalize_actions(grant.actions),
+                )
+            )
+
+        return self.grant_repository.replace_for_user(username, normalized_grants)
 
     @staticmethod
     def _normalize_actions(actions: tuple[ZoneAction, ...]) -> tuple[ZoneAction, ...]:

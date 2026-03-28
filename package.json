@@ -16,6 +16,7 @@
     "format:check:frontend": "npm --prefix frontend run format:check",
     "format:check:backend": "python -m ruff format --check backend",
     "bootstrap:admin": "cd backend && python -m app.bootstrap",
+    "bootstrap:oidc": "cd backend && python -m app.bootstrap",
     "migrate": "cd backend && python -m app.migrations",
     "compose:up": "docker compose -f deploy/docker-compose.yml up --build",
     "compose:down": "docker compose -f deploy/docker-compose.yml down -v",

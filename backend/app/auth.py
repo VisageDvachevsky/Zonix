@@ -19,6 +19,18 @@ from app.security import verify_password
 class UserRepository(Protocol):
     def get_by_username(self, username: str) -> UserRecord | None: ...
 
+    def list_all(self) -> tuple[UserRecord, ...]: ...
+
+    def update_role(self, *, username: str, role: Role) -> UserRecord | None: ...
+
+    def upsert_external_user(
+        self,
+        *,
+        username: str,
+        role: Role,
+        auth_source: str,
+    ) -> UserRecord: ...
+
 
 @dataclass(frozen=True)
 class UserRecord:
@@ -60,6 +72,88 @@ class DatabaseUserRepository:
             is_active=bool(row[4]),
         )
 
+    def list_all(self) -> tuple[UserRecord, ...]:
+        with connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT username, password_hash, role, auth_source, is_active
+                    FROM users
+                    ORDER BY username
+                    """
+                )
+                rows = cursor.fetchall()
+
+        return tuple(
+            UserRecord(
+                username=row[0],
+                password_hash=row[1],
+                role=Role(row[2]),
+                auth_source=row[3],
+                is_active=bool(row[4]),
+            )
+            for row in rows
+        )
+
+    def update_role(self, *, username: str, role: Role) -> UserRecord | None:
+        with connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET role = %s
+                    WHERE username = %s
+                    RETURNING username, password_hash, role, auth_source, is_active
+                    """,
+                    (role.value, username),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+
+        if row is None:
+            return None
+
+        return UserRecord(
+            username=row[0],
+            password_hash=row[1],
+            role=Role(row[2]),
+            auth_source=row[3],
+            is_active=bool(row[4]),
+        )
+
+    def upsert_external_user(
+        self,
+        *,
+        username: str,
+        role: Role,
+        auth_source: str,
+    ) -> UserRecord:
+        with connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO users (username, password_hash, role, auth_source, is_active)
+                    VALUES (%s, %s, %s, %s, TRUE)
+                    ON CONFLICT (username) DO UPDATE
+                    SET role = EXCLUDED.role,
+                        auth_source = EXCLUDED.auth_source,
+                        is_active = TRUE
+                    RETURNING username, password_hash, role, auth_source, is_active
+                    """,
+                    (username, "", role.value, auth_source),
+                )
+                row = cursor.fetchone()
+            connection.commit()
+
+        assert row is not None
+        return UserRecord(
+            username=row[0],
+            password_hash=row[1],
+            role=Role(row[2]),
+            auth_source=row[3],
+            is_active=bool(row[4]),
+        )
+
 
 class InMemoryUserRepository:
     def __init__(self, users: Mapping[str, Mapping[str, object]] | None = None) -> None:
@@ -76,6 +170,49 @@ class InMemoryUserRepository:
 
     def get_by_username(self, username: str) -> UserRecord | None:
         return self._users.get(username)
+
+    def list_all(self) -> tuple[UserRecord, ...]:
+        return tuple(sorted(self._users.values(), key=lambda user: user.username))
+
+    def update_role(self, *, username: str, role: Role) -> UserRecord | None:
+        existing = self._users.get(username)
+        if existing is None:
+            return None
+        updated = UserRecord(
+            username=existing.username,
+            password_hash=existing.password_hash,
+            role=role,
+            auth_source=existing.auth_source,
+            is_active=existing.is_active,
+        )
+        self._users[username] = updated
+        return updated
+
+    def upsert_external_user(
+        self,
+        *,
+        username: str,
+        role: Role,
+        auth_source: str,
+    ) -> UserRecord:
+        record = UserRecord(
+            username=username,
+            password_hash="",
+            role=role,
+            auth_source=auth_source,
+            is_active=True,
+        )
+        self._users[username] = record
+        return record
+
+
+class AuthIdentityConflictError(RuntimeError):
+    def __init__(self, username: str, auth_source: str) -> None:
+        super().__init__(
+            f"user '{username}' already exists with a different auth source and cannot sign in via '{auth_source}'"
+        )
+        self.username = username
+        self.auth_source = auth_source
 
 
 class SessionManager:
@@ -161,6 +298,24 @@ class AuthService:
     def create_session(self, user: User) -> str:
         return self.session_manager.create_session(user)
 
+    def provision_oidc_user(
+        self,
+        *,
+        username: str,
+        role: Role,
+        auth_source: str,
+    ) -> User:
+        existing = self.user_repository.get_by_username(username)
+        if existing is not None and existing.auth_source not in {auth_source}:
+            raise AuthIdentityConflictError(username, auth_source)
+
+        user_record = self.user_repository.upsert_external_user(
+            username=username,
+            role=role,
+            auth_source=auth_source,
+        )
+        return user_record.to_user()
+
     def get_authenticated_user(self, session_token: str | None) -> User | None:
         session_user = self.session_manager.read_session(session_token)
         if session_user is None:
@@ -170,4 +325,13 @@ class AuthService:
         if user_record is None or not user_record.is_active:
             return None
 
+        return user_record.to_user()
+
+    def list_users(self) -> tuple[UserRecord, ...]:
+        return self.user_repository.list_all()
+
+    def update_user_role(self, *, username: str, role: Role) -> User:
+        user_record = self.user_repository.update_role(username=username, role=role)
+        if user_record is None:
+            raise ValueError(f"user '{username}' does not exist")
         return user_record.to_user()

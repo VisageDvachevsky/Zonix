@@ -239,6 +239,177 @@ test("day 10 wires a PowerDNS read-only adapter through backend service and UI",
   assert.match(compose, /powerdns:/);
 });
 
+test("day 11 normalizes RecordSet typing in backend and frontend contracts", () => {
+  const domainSource = readFileSync(join(repoRoot, "backend", "app", "domain", "models.py"), "utf8");
+  const domainTests = readFileSync(join(repoRoot, "backend", "tests", "test_domain_models.py"), "utf8");
+  const apiSource = readFileSync(join(repoRoot, "frontend", "src", "api.ts"), "utf8");
+
+  assert.match(domainSource, /class RecordType/);
+  assert.match(domainSource, /def validate_record_values/);
+  assert.match(domainTests, /test_record_set_validates_supported_day_11_types/);
+  assert.match(apiSource, /recordTypeSchema/);
+  assert.match(apiSource, /superRefine/);
+});
+
+test("day 12 adds PowerDNS write operations for create update and delete", () => {
+  const mainSource = readFileSync(join(repoRoot, "backend", "app", "main.py"), "utf8");
+  const powerdnsSource = readFileSync(join(repoRoot, "backend", "app", "powerdns.py"), "utf8");
+  const recordWriteSource = readFileSync(join(repoRoot, "backend", "app", "record_writes.py"), "utf8");
+  const apiTests = readFileSync(join(repoRoot, "backend", "tests", "test_mock_api.py"), "utf8");
+
+  assert.match(mainSource, /@app\.post\(\"\/zones\/\{zone_name\}\/records\"/);
+  assert.match(mainSource, /@app\.put\(\"\/zones\/\{zone_name\}\/records\"/);
+  assert.match(mainSource, /@app\.delete\(\"\/zones\/\{zone_name\}\/records\"/);
+  assert.match(powerdnsSource, /def patch_zone/);
+  assert.match(powerdnsSource, /def create_record_set/);
+  assert.match(powerdnsSource, /def update_record_set/);
+  assert.match(powerdnsSource, /def delete_record_set/);
+  assert.match(recordWriteSource, /class RecordWriteService/);
+  assert.match(apiTests, /test_editor_can_create_record_for_powerdns_zone/);
+  assert.match(apiTests, /test_editor_can_update_existing_record_for_powerdns_zone/);
+  assert.match(apiTests, /test_editor_can_delete_existing_record_for_powerdns_zone/);
+});
+
+test("day 13 adds audit events for login and record mutations", () => {
+  const mainSource = readFileSync(join(repoRoot, "backend", "app", "main.py"), "utf8");
+  const auditSource = readFileSync(join(repoRoot, "backend", "app", "audit.py"), "utf8");
+  const domainSource = readFileSync(join(repoRoot, "backend", "app", "domain", "models.py"), "utf8");
+  const authTests = readFileSync(join(repoRoot, "backend", "tests", "test_auth_api.py"), "utf8");
+  const apiTests = readFileSync(join(repoRoot, "backend", "tests", "test_mock_api.py"), "utf8");
+
+  assert.match(mainSource, /@app\.get\(\"\/audit\"/);
+  assert.match(mainSource, /action=\"login\.success\"/);
+  assert.match(mainSource, /action=\"record\.created\"/);
+  assert.match(mainSource, /action=\"record\.updated\"/);
+  assert.match(mainSource, /action=\"record\.deleted\"/);
+  assert.match(auditSource, /class AuditService/);
+  assert.match(auditSource, /class DatabaseAuditEventRepository/);
+  assert.match(domainSource, /class AuditEvent/);
+  assert.match(domainSource, /created_at:/);
+  assert.match(authTests, /test_login_sets_session_cookie_and_returns_authenticated_user/);
+  assert.match(apiTests, /test_audit_lists_login_and_record_mutations/);
+});
+
+test("day 14 adds changeset preview and optimistic locking for record writes", () => {
+  const domainSource = readFileSync(join(repoRoot, "backend", "app", "domain", "models.py"), "utf8");
+  const mainSource = readFileSync(join(repoRoot, "backend", "app", "main.py"), "utf8");
+  const recordWriteSource = readFileSync(join(repoRoot, "backend", "app", "record_writes.py"), "utf8");
+  const schemasSource = readFileSync(join(repoRoot, "backend", "app", "schemas.py"), "utf8");
+  const apiTests = readFileSync(join(repoRoot, "backend", "tests", "test_mock_api.py"), "utf8");
+
+  assert.match(domainSource, /class ChangeOperation/);
+  assert.match(domainSource, /class ChangeSet/);
+  assert.match(mainSource, /@app\.post\(\"\/zones\/\{zone_name\}\/changes\/preview\"/);
+  assert.match(recordWriteSource, /def preview_create_record/);
+  assert.match(recordWriteSource, /def preview_update_record/);
+  assert.match(recordWriteSource, /def preview_delete_record/);
+  assert.match(recordWriteSource, /def record_version/);
+  assert.match(recordWriteSource, /class RecordVersionConflictError/);
+  assert.match(schemasSource, /class ChangePreviewRequest/);
+  assert.match(schemasSource, /class ChangeSetResponse/);
+  assert.match(apiTests, /test_preview_update_returns_before_after_and_versions/);
+  assert.match(apiTests, /test_update_rejects_stale_expected_version/);
+});
+
+test("day 15 fixes a live PowerDNS api flow and internal demo trail", () => {
+  const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+  const quickstart = readFileSync(join(repoRoot, "docs", "quickstart.md"), "utf8");
+  const liveFlowTests = readFileSync(
+    join(repoRoot, "backend", "tests", "test_powerdns_flow_integration.py"),
+    "utf8",
+  );
+
+  assert.match(readme, /login -> open zone -> edit record -> audit/);
+  assert.match(quickstart, /Day 15 demo flow/);
+  assert.match(quickstart, /python -m unittest tests\.test_powerdns_flow_integration/);
+  assert.match(liveFlowTests, /test_live_api_flow_login_open_zone_edit_record_and_see_audit/);
+});
+
+test("day 16 adds identity provider configuration foundation for generic oidc", () => {
+  const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+  const domainSource = readFileSync(join(repoRoot, "backend", "app", "domain", "models.py"), "utf8");
+  const identityProviderSource = readFileSync(
+    join(repoRoot, "backend", "app", "identity_providers.py"),
+    "utf8",
+  );
+  const migrationSource = readFileSync(
+    join(repoRoot, "backend", "migrations", "0001_initial.sql"),
+    "utf8",
+  );
+  const testsSource = readFileSync(
+    join(repoRoot, "backend", "tests", "test_identity_providers.py"),
+    "utf8",
+  );
+
+  assert.match(readme, /IdentityProvider/);
+  assert.match(domainSource, /class IdentityProviderKind/);
+  assert.match(domainSource, /client_id:/);
+  assert.match(domainSource, /client_secret:/);
+  assert.match(domainSource, /claims_mapping_rules:/);
+  assert.match(identityProviderSource, /class IdentityProviderService/);
+  assert.match(identityProviderSource, /class DatabaseIdentityProviderRepository/);
+  assert.match(migrationSource, /scopes TEXT\[\] NOT NULL DEFAULT ARRAY\[\]::TEXT\[\]/);
+  assert.match(migrationSource, /claims_mapping_rules JSONB NOT NULL DEFAULT '\{\}'::jsonb/);
+  assert.match(testsSource, /test_repository_round_trips_oidc_configuration/);
+});
+
+test("day 17 implements oidc login start and callback flow", () => {
+  const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+  const mainSource = readFileSync(join(repoRoot, "backend", "app", "main.py"), "utf8");
+  const authSource = readFileSync(join(repoRoot, "backend", "app", "auth.py"), "utf8");
+  const oidcSource = readFileSync(join(repoRoot, "backend", "app", "oidc.py"), "utf8");
+  const authTests = readFileSync(join(repoRoot, "backend", "tests", "test_auth_api.py"), "utf8");
+
+  assert.match(readme, /generic OIDC login start\/callback flow/);
+  assert.match(mainSource, /@app\.get\(\"\/auth\/oidc\/providers\"/);
+  assert.match(mainSource, /@app\.get\(\"\/auth\/oidc\/\{provider_name\}\/login\"/);
+  assert.match(mainSource, /@app\.get\(\"\/auth\/oidc\/\{provider_name\}\/callback\"/);
+  assert.match(authSource, /def provision_oidc_user/);
+  assert.match(oidcSource, /class OIDCStateManager/);
+  assert.match(oidcSource, /class OIDCService/);
+  assert.match(authTests, /test_oidc_callback_maps_groups_into_role_and_zone_access/);
+});
+
+test("day 18 maps oidc claims and groups into roles and zone access", () => {
+  const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+  const oidcSource = readFileSync(join(repoRoot, "backend", "app", "oidc.py"), "utf8");
+  const accessSource = readFileSync(join(repoRoot, "backend", "app", "access.py"), "utf8");
+  const authTests = readFileSync(join(repoRoot, "backend", "tests", "test_auth_api.py"), "utf8");
+  const identityProviderTests = readFileSync(
+    join(repoRoot, "backend", "tests", "test_identity_providers.py"),
+    "utf8",
+  );
+
+  assert.match(readme, /Day 1-18 milestone path/);
+  assert.match(oidcSource, /def map_identity/);
+  assert.match(oidcSource, /adminGroups/);
+  assert.match(oidcSource, /zoneEditorPattern/);
+  assert.match(accessSource, /def sync_zone_grants_for_user/);
+  assert.match(authTests, /test_oidc_callback_maps_groups_into_role_and_zone_access/);
+  assert.match(identityProviderTests, /test_mapping_promotes_zone_editor_group_into_editor_and_write_grant/);
+});
+
+test("oidc runtime path includes migration and bootstrap coverage", () => {
+  const migrationsSource = readFileSync(
+    join(repoRoot, "backend", "migrations", "0002_identity_provider_oidc_fields.sql"),
+    "utf8",
+  );
+  const bootstrapSource = readFileSync(join(repoRoot, "backend", "app", "bootstrap.py"), "utf8");
+  const bootstrapTests = readFileSync(
+    join(repoRoot, "backend", "tests", "test_bootstrap.py"),
+    "utf8",
+  );
+  const quickstart = readFileSync(join(repoRoot, "docs", "quickstart.md"), "utf8");
+  const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+
+  assert.match(migrationsSource, /ALTER TABLE identity_providers/);
+  assert.match(migrationsSource, /ADD COLUMN IF NOT EXISTS claims_mapping_rules/);
+  assert.match(bootstrapSource, /def ensure_bootstrap_oidc_provider/);
+  assert.match(bootstrapTests, /test_ensure_bootstrap_oidc_provider_upserts_provider_configuration/);
+  assert.match(quickstart, /npm run bootstrap:oidc/);
+  assert.equal(packageJson.scripts["bootstrap:oidc"] !== undefined, true);
+});
+
 let failed = 0;
 
 for (const { name, fn } of tests) {
