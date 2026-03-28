@@ -16,4 +16,8 @@ frontend/tsconfig.tsbuildinfo
 mitm_mcp_traffic.db
 backend/pytest-cache-files-*/
 deploy/powerdns/data/
+deploy/backend-host-vm.env
+deploy/backend-vm.env
+deploy/nginx-dex-proxy.conf
+deploy/mock-oidc/
 plan.txt
