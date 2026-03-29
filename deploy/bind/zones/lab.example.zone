@@ -1,0 +1,12 @@
+$TTL 300
+@   IN  SOA ns1.lab.example. hostmaster.lab.example. (
+        2026032901
+        3600
+        600
+        1209600
+        300
+)
+@       IN  NS      ns1.lab.example.
+ns1     IN  A       192.0.2.53
+www     IN  A       192.0.2.80
+txt     IN  TXT     "bind-lab"

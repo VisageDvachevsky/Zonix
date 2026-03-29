@@ -76,6 +76,38 @@ class SettingsTests(unittest.TestCase):
             ):
                 Settings()
 
+    def test_bind_backend_requires_manual_zone_inventory_when_enabled(self) -> None:
+        env = self.base_env | {
+            "ZONIX_BIND_BACKEND_ENABLED": "true",
+            "ZONIX_BIND_ZONE_NAMES": "",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_BIND_ZONE_NAMES must define at least one zone",
+            ):
+                Settings()
+
+    def test_bind_backend_requires_complete_tsig_pair(self) -> None:
+        env = self.base_env | {
+            "ZONIX_BIND_BACKEND_ENABLED": "true",
+            "ZONIX_BIND_ZONE_NAMES": "lab.example",
+            "ZONIX_BIND_TSIG_KEY_NAME": "zonix-key.",
+            "ZONIX_BIND_TSIG_SECRET": "",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_BIND_TSIG_KEY_NAME and ZONIX_BIND_TSIG_SECRET must be provided together",
+            ):
+                Settings()
+
 
 if __name__ == "__main__":
     unittest.main()

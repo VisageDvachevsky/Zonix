@@ -14,11 +14,13 @@ The repository now covers the Day 1-20 milestone path:
 - frozen v0.1 scope, domain model, and backend capability matrix
 - React/FastAPI monorepo with CI, lint, format, and repository guardrails
 - SQL migrations, bootstrap admin flow, and Docker Compose local stack
+- separate day-21-style BIND lab fixtures in Compose override form
 - reproducible bootstrap path for deterministic local demo users plus a local Keycloak-backed OIDC demo realm
 - policy enforcement across admin/editor/viewer roles
 - persisted backend registry, zone inventory, and zone-level grants
 - protected UI/API flow for backend list, zone list, zone detail, record inventory, record mutations, and audit listing
 - PowerDNS adapter mapped into backend-agnostic `Zone` and `RecordSet` models for both read and write flows
+- RFC2136/BIND adapter with manual zone inventory, AXFR read path, RFC2136 write path, and snapshot fallback wiring
 - audit trail for successful local login and record create/update/delete events with actor, zone, backend, and payload context
 - `ChangeSet` preview for record mutations with before/after snapshots, conflict detection, and basic optimistic locking via record version tokens
 - live PowerDNS API flow coverage for `login -> open zone -> edit record -> audit` plus an internal demo path in quickstart

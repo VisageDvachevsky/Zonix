@@ -1,0 +1,39 @@
+services:
+  bind:
+    build:
+      context: ./bind
+    command:
+      - named
+      - "-4"
+      - "-g"
+      - "-u"
+      - root
+      - "-c"
+      - /etc/bind/named.conf
+    ports:
+      - "5301:53/tcp"
+      - "5301:53/udp"
+
+  backend:
+    environment:
+      ZONIX_BIND_BACKEND_ENABLED: "true"
+      ZONIX_BIND_BACKEND_NAME: bind-lab
+      ZONIX_BIND_SERVER_HOST: bind
+      ZONIX_BIND_SERVER_PORT: 53
+      ZONIX_BIND_TIMEOUT_SECONDS: 5
+      ZONIX_BIND_AXFR_ENABLED: "true"
+      ZONIX_BIND_TSIG_KEY_NAME: zonix-key.
+      ZONIX_BIND_TSIG_SECRET: 2R3kJ2vclUO6hZOPJQ8eX8Vq3k2V+3h4E1W9mA6K0q8=
+      ZONIX_BIND_TSIG_ALGORITHM: hmac-sha256
+      ZONIX_BIND_ZONE_NAMES: lab.example
+      ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON: >-
+        [{"username":"alice","zoneName":"example.com","actions":["write"]},
+        {"username":"alice","zoneName":"lab.example","actions":["read","write"]},
+        {"username":"bob","zoneName":"internal.example","actions":["read"]},
+        {"username":"bob","zoneName":"lab.example","actions":["read"]}]
+    depends_on:
+      - postgres
+      - powerdns
+      - keycloak
+      - oidc-gateway
+      - bind

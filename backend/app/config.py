@@ -44,6 +44,27 @@ def _load_bootstrap_zone_grants() -> list[dict[str, object]]:
     return normalized
 
 
+def _load_bind_zone_names() -> tuple[str, ...]:
+    raw = getenv("ZONIX_BIND_ZONE_NAMES", "")
+    return tuple(zone.strip() for zone in raw.split(",") if zone.strip())
+
+
+def _load_bind_snapshot_file_map() -> dict[str, str]:
+    raw = getenv("ZONIX_BIND_SNAPSHOT_FILE_MAP", "{}")
+    payload = loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("ZONIX_BIND_SNAPSHOT_FILE_MAP must decode to an object")
+
+    normalized: dict[str, str] = {}
+    for zone_name, path in payload.items():
+        if not isinstance(zone_name, str) or not zone_name.strip():
+            raise ValueError("ZONIX_BIND_SNAPSHOT_FILE_MAP keys must be non-empty zone names")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("ZONIX_BIND_SNAPSHOT_FILE_MAP values must be non-empty file paths")
+        normalized[zone_name.strip()] = path.strip()
+    return normalized
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = field(default_factory=lambda: getenv("ZONIX_APP_NAME", "Zonix API"))
@@ -109,6 +130,35 @@ class Settings:
     powerdns_timeout_seconds: float = field(
         default_factory=lambda: float(getenv("ZONIX_POWERDNS_TIMEOUT_SECONDS", "5"))
     )
+    bind_backend_enabled: bool = field(
+        default_factory=lambda: env_flag("ZONIX_BIND_BACKEND_ENABLED", False)
+    )
+    bind_backend_name: str = field(
+        default_factory=lambda: getenv("ZONIX_BIND_BACKEND_NAME", "bind-lab")
+    )
+    bind_server_host: str = field(
+        default_factory=lambda: getenv("ZONIX_BIND_SERVER_HOST", "127.0.0.1")
+    )
+    bind_server_port: int = field(
+        default_factory=lambda: int(getenv("ZONIX_BIND_SERVER_PORT", "53"))
+    )
+    bind_timeout_seconds: float = field(
+        default_factory=lambda: float(getenv("ZONIX_BIND_TIMEOUT_SECONDS", "5"))
+    )
+    bind_axfr_enabled: bool = field(
+        default_factory=lambda: env_flag("ZONIX_BIND_AXFR_ENABLED", True)
+    )
+    bind_tsig_key_name: str = field(
+        default_factory=lambda: getenv("ZONIX_BIND_TSIG_KEY_NAME", "")
+    )
+    bind_tsig_secret: str = field(
+        default_factory=lambda: getenv("ZONIX_BIND_TSIG_SECRET", "")
+    )
+    bind_tsig_algorithm: str = field(
+        default_factory=lambda: getenv("ZONIX_BIND_TSIG_ALGORITHM", "hmac-sha256")
+    )
+    bind_zone_names: tuple[str, ...] = field(default_factory=_load_bind_zone_names)
+    bind_snapshot_file_map: dict[str, str] = field(default_factory=_load_bind_snapshot_file_map)
     oidc_bootstrap_name: str = field(
         default_factory=lambda: getenv("ZONIX_OIDC_BOOTSTRAP_NAME", "")
     )
@@ -159,6 +209,24 @@ class Settings:
             raise ValueError("ZONIX_POWERDNS_SERVER_ID must not be empty")
         if self.powerdns_timeout_seconds <= 0:
             raise ValueError("ZONIX_POWERDNS_TIMEOUT_SECONDS must be positive")
+        if not self.bind_backend_name:
+            raise ValueError("ZONIX_BIND_BACKEND_NAME must not be empty")
+        if self.bind_backend_enabled:
+            if not self.bind_server_host:
+                raise ValueError("ZONIX_BIND_SERVER_HOST must not be empty")
+            if self.bind_server_port <= 0 or self.bind_server_port > 65535:
+                raise ValueError("ZONIX_BIND_SERVER_PORT must be between 1 and 65535")
+            if self.bind_timeout_seconds <= 0:
+                raise ValueError("ZONIX_BIND_TIMEOUT_SECONDS must be positive")
+            if not self.bind_zone_names:
+                raise ValueError(
+                    "ZONIX_BIND_ZONE_NAMES must define at least one zone "
+                    "when BIND backend is enabled"
+                )
+            if bool(self.bind_tsig_key_name) != bool(self.bind_tsig_secret):
+                raise ValueError(
+                    "ZONIX_BIND_TSIG_KEY_NAME and ZONIX_BIND_TSIG_SECRET must be provided together"
+                )
         if not isinstance(self.oidc_bootstrap_claims_mapping_rules, dict):
             raise ValueError("ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES must decode to an object")
         for user in self.bootstrap_users:

@@ -24,6 +24,79 @@ This starts:
 
 The backend container runs SQL migrations, provisions deterministic demo users, and bootstraps a deterministic OIDC provider configuration on startup.
 
+## Optional BIND lab
+
+Day-21 style BIND/RFC2136 fixtures live in a separate Compose override so the default PowerDNS demo path stays unchanged.
+
+From the repository root:
+
+```bash
+npm run compose:up:bind-lab
+```
+
+This adds:
+
+- BIND on `localhost:5301` for TCP and UDP DNS
+- a TSIG-protected `lab.example` master zone
+- backend bootstrap wiring for `bind-lab`
+- demo grants so `alice` can edit `lab.example` and `bob` can read it
+
+Relevant backend env values for the lab:
+
+- `ZONIX_BIND_BACKEND_ENABLED=true`
+- `ZONIX_BIND_BACKEND_NAME=bind-lab`
+- `ZONIX_BIND_SERVER_HOST=bind`
+- `ZONIX_BIND_ZONE_NAMES=lab.example`
+- `ZONIX_BIND_TSIG_KEY_NAME=zonix-key.`
+
+The BIND fixtures are stored in `deploy/bind/`, and the override file is `deploy/docker-compose.bind-lab.yml`.
+
+Quick smoke check after startup:
+
+```bash
+curl -i http://localhost:8000/zones/lab.example \
+  -H "Cookie: zonix_session=<paste-cookie-value>"
+
+curl -i http://localhost:8000/zones/lab.example/records \
+  -H "Cookie: zonix_session=<paste-cookie-value>"
+```
+
+## Dual-backend demo
+
+To validate the day-25 milestone, start the base stack plus the BIND lab:
+
+```bash
+npm run compose:up:bind-lab
+```
+
+Then verify both backends through the same API session:
+
+```bash
+curl -c zonix-cookie.txt -i -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"local-dev-admin-change-me"}'
+
+curl -b zonix-cookie.txt -i http://localhost:8000/zones
+
+curl -b zonix-cookie.txt -i http://localhost:8000/zones/example.com/records
+
+curl -b zonix-cookie.txt -i http://localhost:8000/zones/lab.example/records
+```
+
+The live integration proof for this milestone is:
+
+```bash
+cd backend
+set ZONIX_POWERDNS_API_URL=http://127.0.0.1:8081
+set ZONIX_POWERDNS_API_KEY=zonix-dev-powerdns-key
+set ZONIX_POWERDNS_SERVER_ID=localhost
+set ZONIX_BIND_SERVER_HOST=127.0.0.1
+set ZONIX_BIND_SERVER_PORT=5301
+set ZONIX_BIND_TSIG_KEY_NAME=zonix-key.
+set ZONIX_BIND_TSIG_SECRET=2R3kJ2vclUO6hZOPJQ8eX8Vq3k2V+3h4E1W9mA6K0q8=
+python -m pytest tests/test_dual_backend_flow_integration.py
+```
+
 ## Bootstrap admin credentials
 
 - username: `admin`

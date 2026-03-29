@@ -50,6 +50,7 @@ from app.record_writes import (
     RecordWriteService,
     record_version,
 )
+from app.rfc2136 import RFC2136Adapter, RFC2136Client, build_file_snapshot_readers
 from app.schemas import (
     AdminUserListResponse,
     AdminUserResponse,
@@ -87,6 +88,7 @@ from app.schemas import (
 )
 from app.zone_reads import (
     UpstreamReadError,
+    ZoneReadAdapter,
     ZoneAdapterNotConfiguredError,
     ZoneNotFoundError,
     ZoneReadService,
@@ -229,19 +231,62 @@ def build_access_service() -> AccessService:
     )
 
 
+def build_zone_adapters() -> dict[str, ZoneReadAdapter]:
+    adapters: dict[str, ZoneReadAdapter] = {
+        settings.powerdns_backend_name: PowerDNSReadAdapter(
+            backend_name=settings.powerdns_backend_name,
+            client=PowerDNSClient(
+                api_url=settings.powerdns_api_url,
+                api_key=settings.powerdns_api_key,
+                server_id=settings.powerdns_server_id,
+                timeout_seconds=settings.powerdns_timeout_seconds,
+            ),
+        )
+    }
+
+    if settings.bind_backend_enabled:
+        adapters[settings.bind_backend_name] = RFC2136Adapter(
+            backend_name=settings.bind_backend_name,
+            zone_names=settings.bind_zone_names,
+            client=RFC2136Client(
+                server_host=settings.bind_server_host,
+                port=settings.bind_server_port,
+                timeout_seconds=settings.bind_timeout_seconds,
+                tsig_key_name=settings.bind_tsig_key_name,
+                tsig_secret=settings.bind_tsig_secret,
+                tsig_algorithm=settings.bind_tsig_algorithm,
+            ),
+            axfr_enabled=settings.bind_axfr_enabled,
+            snapshot_readers=build_file_snapshot_readers(settings.bind_snapshot_file_map),
+        )
+
+    return adapters
+
+
+def bind_backend_capabilities() -> tuple[BackendCapability, ...]:
+    capabilities: list[BackendCapability] = [BackendCapability.READ_ZONES]
+
+    if settings.bind_axfr_enabled or settings.bind_snapshot_file_map:
+        capabilities.append(BackendCapability.READ_RECORDS)
+    if settings.bind_snapshot_file_map:
+        capabilities.append(BackendCapability.IMPORT_SNAPSHOT)
+    if settings.bind_axfr_enabled:
+        capabilities.append(BackendCapability.AXFR)
+    if settings.bind_tsig_key_name and settings.bind_tsig_secret:
+        capabilities.extend(
+            (
+                BackendCapability.WRITE_RECORDS,
+                BackendCapability.RFC2136_UPDATE,
+            )
+        )
+
+    return tuple(capabilities)
+
+
 def build_zone_read_service(access_service: AccessService) -> ZoneReadService:
-    powerdns_adapter = PowerDNSReadAdapter(
-        backend_name=settings.powerdns_backend_name,
-        client=PowerDNSClient(
-            api_url=settings.powerdns_api_url,
-            api_key=settings.powerdns_api_key,
-            server_id=settings.powerdns_server_id,
-            timeout_seconds=settings.powerdns_timeout_seconds,
-        ),
-    )
     return ZoneReadService(
         access_service=access_service,
-        adapters={settings.powerdns_backend_name: powerdns_adapter},
+        adapters=build_zone_adapters(),
     )
 
 
@@ -331,18 +376,32 @@ def initialize_default_runtime(
             ),
         )
     )
-    try:
-        synchronize_backend_inventory(
-            access_service,
-            zone_read_service,
-            settings.powerdns_backend_name,
+    if settings.bind_backend_enabled:
+        access_service.register_backend(
+            Backend(
+                name=settings.bind_backend_name,
+                backend_type="rfc2136-bind",
+                capabilities=bind_backend_capabilities(),
+            )
         )
+
+    sync_errors: list[str] = []
+    try:
+        for backend_name in zone_read_service.adapters:
+            synchronize_backend_inventory(
+                access_service,
+                zone_read_service,
+                backend_name,
+            )
         synchronize_bootstrap_zone_grants(access_service)
     except (UpstreamReadError, ZoneAdapterNotConfiguredError) as error:
+        sync_errors.append(str(error))
+
+    if sync_errors:
         set_inventory_sync_state(
             app,
             status="failed",
-            error=str(error),
+            error="; ".join(sync_errors),
         )
     else:
         set_inventory_sync_state(
