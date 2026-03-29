@@ -1,17 +1,26 @@
 #!/bin/sh
 set -eu
 
-DB_PATH=/var/lib/powerdns/pdns.sqlite3
+CONFIG_DIR=/etc/pdns-zonix
+ZONES_DIR=/etc/pdns-zones
 
-mkdir -p "$(dirname "$DB_PATH")"
+for _ in $(seq 1 60); do
+  if pdnsutil --config-dir="$CONFIG_DIR" list-all-zones >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
 
-if [ ! -f "$DB_PATH" ]; then
-  sqlite3 "$DB_PATH" < /etc/pdns-init/schema.sql
-  sqlite3 "$DB_PATH" < /etc/pdns-init/seed.sql
+if [ -z "$(pdnsutil --config-dir="$CONFIG_DIR" list-all-zones 2>/dev/null | head -n 1)" ]; then
+  for zone_file in "$ZONES_DIR"/*.zone; do
+    [ -f "$zone_file" ] || continue
+    zone_name=$(basename "$zone_file" .zone)
+    pdnsutil --config-dir="$CONFIG_DIR" load-zone "$zone_name" "$zone_file"
+  done
 fi
 
 exec /usr/local/sbin/pdns_server \
-  --config-dir=/etc/pdns-zonix \
+  --config-dir="$CONFIG_DIR" \
   --daemon=no \
   --disable-syslog=yes \
   --api=yes \

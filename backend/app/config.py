@@ -49,6 +49,17 @@ def _load_bind_zone_names() -> tuple[str, ...]:
     return tuple(zone.strip() for zone in raw.split(",") if zone.strip())
 
 
+def _load_allowed_web_origins() -> tuple[str, ...]:
+    raw = getenv(
+        "ZONIX_ALLOWED_WEB_ORIGINS",
+        "http://localhost:4173,"
+        "http://127.0.0.1:4173,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173",
+    )
+    return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
+
+
 def _load_bind_snapshot_file_map() -> dict[str, str]:
     raw = getenv("ZONIX_BIND_SNAPSHOT_FILE_MAP", "{}")
     payload = loads(raw)
@@ -103,6 +114,7 @@ class Settings:
     session_cookie_path: str = field(
         default_factory=lambda: getenv("ZONIX_SESSION_COOKIE_PATH", "/")
     )
+    allowed_web_origins: tuple[str, ...] = field(default_factory=_load_allowed_web_origins)
     session_secret_key: str = field(
         default_factory=lambda: getenv(
             "ZONIX_SESSION_SECRET_KEY",
@@ -117,6 +129,9 @@ class Settings:
     )
     powerdns_backend_name: str = field(
         default_factory=lambda: getenv("ZONIX_POWERDNS_BACKEND_NAME", "powerdns-local")
+    )
+    powerdns_backend_enabled: bool = field(
+        default_factory=lambda: env_flag("ZONIX_POWERDNS_BACKEND_ENABLED", True)
     )
     powerdns_api_url: str = field(
         default_factory=lambda: getenv("ZONIX_POWERDNS_API_URL", "http://127.0.0.1:8081")
@@ -197,18 +212,21 @@ class Settings:
             raise ValueError("ZONIX_SESSION_COOKIE_SECURE must be true when SameSite=None")
         if not self.session_cookie_path.startswith("/"):
             raise ValueError("ZONIX_SESSION_COOKIE_PATH must start with /")
+        if not self.allowed_web_origins:
+            raise ValueError("ZONIX_ALLOWED_WEB_ORIGINS must define at least one origin")
         if self.session_ttl_seconds <= 0:
             raise ValueError("ZONIX_SESSION_TTL_SECONDS must be positive")
-        if not self.powerdns_backend_name:
-            raise ValueError("ZONIX_POWERDNS_BACKEND_NAME must not be empty")
-        if not self.powerdns_api_url:
-            raise ValueError("ZONIX_POWERDNS_API_URL must not be empty")
-        if not self.powerdns_api_key:
-            raise ValueError("ZONIX_POWERDNS_API_KEY must not be empty")
-        if not self.powerdns_server_id:
-            raise ValueError("ZONIX_POWERDNS_SERVER_ID must not be empty")
-        if self.powerdns_timeout_seconds <= 0:
-            raise ValueError("ZONIX_POWERDNS_TIMEOUT_SECONDS must be positive")
+        if self.powerdns_backend_enabled:
+            if not self.powerdns_backend_name:
+                raise ValueError("ZONIX_POWERDNS_BACKEND_NAME must not be empty")
+            if not self.powerdns_api_url:
+                raise ValueError("ZONIX_POWERDNS_API_URL must not be empty")
+            if not self.powerdns_api_key:
+                raise ValueError("ZONIX_POWERDNS_API_KEY must not be empty")
+            if not self.powerdns_server_id:
+                raise ValueError("ZONIX_POWERDNS_SERVER_ID must not be empty")
+            if self.powerdns_timeout_seconds <= 0:
+                raise ValueError("ZONIX_POWERDNS_TIMEOUT_SECONDS must be positive")
         if not self.bind_backend_name:
             raise ValueError("ZONIX_BIND_BACKEND_NAME must not be empty")
         if self.bind_backend_enabled:

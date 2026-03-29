@@ -44,6 +44,32 @@ class AdminUserRoleRequest(BaseModel):
     role: Role
 
 
+class ServiceAccountRequest(BaseModel):
+    username: str = Field(min_length=1)
+    role: Role
+
+
+class ServiceAccountResponse(BaseModel):
+    username: str = Field(min_length=1)
+    role: Role
+    auth_source: str = Field(min_length=1, alias="authSource")
+    is_active: bool = Field(alias="isActive")
+
+
+class ServiceAccountListResponse(BaseModel):
+    items: tuple[ServiceAccountResponse, ...]
+
+
+class ApiTokenCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class ApiTokenCreateResponse(BaseModel):
+    username: str = Field(min_length=1)
+    token_name: str = Field(min_length=1, alias="tokenName")
+    token: str = Field(min_length=1)
+
+
 class AuthSessionResponse(BaseModel):
     authenticated: bool
     user: AuthenticatedUserResponse | None = None
@@ -198,6 +224,41 @@ class ChangeSetResponse(BaseModel):
     summary: str = Field(min_length=1)
 
 
+class BulkChangeItemRequest(BaseModel):
+    operation: ChangeOperation
+    name: str = Field(min_length=1)
+    record_type: str = Field(min_length=1, alias="recordType")
+    ttl: int | None = Field(default=None, gt=0)
+    values: tuple[str, ...] | None = None
+    expected_version: str | None = Field(default=None, alias="expectedVersion")
+
+    @model_validator(mode="after")
+    def validate_operation_shape(self) -> "BulkChangeItemRequest":
+        if self.operation in {ChangeOperation.CREATE, ChangeOperation.UPDATE}:
+            if self.ttl is None:
+                raise ValueError("ttl is required for create/update bulk changes")
+            if not self.values:
+                raise ValueError("values are required for create/update bulk changes")
+        if self.operation == ChangeOperation.DELETE:
+            if self.ttl is not None:
+                raise ValueError("ttl is not allowed for delete bulk changes")
+            if self.values is not None:
+                raise ValueError("values are not allowed for delete bulk changes")
+        return self
+
+
+class BulkChangeRequest(BaseModel):
+    zone_name: str = Field(min_length=1, alias="zoneName")
+    items: tuple[BulkChangeItemRequest, ...] = Field(min_length=1)
+
+
+class BulkChangeResponse(BaseModel):
+    zone_name: str = Field(min_length=1, alias="zoneName")
+    applied: bool
+    has_conflicts: bool = Field(alias="hasConflicts")
+    items: tuple[ChangeSetResponse, ...]
+
+
 class AuditEventResponse(BaseModel):
     actor: str = Field(min_length=1)
     action: str = Field(min_length=1)
@@ -230,3 +291,23 @@ class ZoneGrantListResponse(BaseModel):
 class ZoneSyncResponse(BaseModel):
     backend_name: str = Field(min_length=1, alias="backendName")
     synced_zones: tuple[ZoneResponse, ...] = Field(alias="syncedZones")
+
+
+class DiscoveredZoneResponse(BaseModel):
+    name: str = Field(min_length=1)
+    backend_name: str = Field(min_length=1, alias="backendName")
+    managed: bool
+
+
+class ZoneDiscoveryResponse(BaseModel):
+    backend_name: str = Field(min_length=1, alias="backendName")
+    items: tuple[DiscoveredZoneResponse, ...]
+
+
+class ZoneImportRequest(BaseModel):
+    zone_names: tuple[str, ...] | None = Field(default=None, alias="zoneNames")
+
+
+class ZoneImportResponse(BaseModel):
+    backend_name: str = Field(min_length=1, alias="backendName")
+    imported_zones: tuple[ZoneResponse, ...] = Field(alias="importedZones")

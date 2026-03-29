@@ -124,7 +124,7 @@ class PowerDNSApiFlowIntegrationTests(unittest.TestCase):
                 "name": record_name,
                 "recordType": "TXT",
                 "ttl": 300,
-                "values": ['"day15-created"'],
+                "values": ["day15-created"],
             },
             headers=self.csrf_headers(),
         )
@@ -135,6 +135,7 @@ class PowerDNSApiFlowIntegrationTests(unittest.TestCase):
                 f"live API flow requires writable PowerDNS fixture: {create_response.json()['detail']}"
             )
         self.assertEqual(create_response.status_code, 200)
+        self.assertEqual(create_response.json()["values"], ['"day15-created"'])
 
         created_version = create_response.json()["version"]
 
@@ -146,7 +147,7 @@ class PowerDNSApiFlowIntegrationTests(unittest.TestCase):
                     "name": record_name,
                     "recordType": "TXT",
                     "ttl": 600,
-                    "values": ['"day15-updated"'],
+                    "values": ["day15-updated"],
                     "expectedVersion": created_version,
                 },
                 headers=self.csrf_headers(),

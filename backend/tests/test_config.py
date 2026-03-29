@@ -1,5 +1,6 @@
 import os
 import unittest
+from importlib import import_module
 from unittest.mock import patch
 
 
@@ -18,6 +19,8 @@ class SettingsTests(unittest.TestCase):
             "ZONIX_SESSION_SECRET_KEY": "local-dev-session-secret-change-me-32-bytes",
             "ZONIX_SESSION_TTL_SECONDS": "43200",
         }
+        with patch.dict(os.environ, self.base_env, clear=True):
+            import_module("app.config")
 
     def test_production_requires_non_default_session_secret(self) -> None:
         env = self.base_env | {"ZONIX_ENV": "production"}
@@ -78,6 +81,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_bind_backend_requires_manual_zone_inventory_when_enabled(self) -> None:
         env = self.base_env | {
+            "ZONIX_POWERDNS_BACKEND_ENABLED": "false",
             "ZONIX_BIND_BACKEND_ENABLED": "true",
             "ZONIX_BIND_ZONE_NAMES": "",
         }
@@ -93,6 +97,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_bind_backend_requires_complete_tsig_pair(self) -> None:
         env = self.base_env | {
+            "ZONIX_POWERDNS_BACKEND_ENABLED": "false",
             "ZONIX_BIND_BACKEND_ENABLED": "true",
             "ZONIX_BIND_ZONE_NAMES": "lab.example",
             "ZONIX_BIND_TSIG_KEY_NAME": "zonix-key.",
@@ -107,6 +112,24 @@ class SettingsTests(unittest.TestCase):
                 "ZONIX_BIND_TSIG_KEY_NAME and ZONIX_BIND_TSIG_SECRET must be provided together",
             ):
                 Settings()
+
+    def test_powerdns_requirements_can_be_disabled_for_bind_only_runtime(self) -> None:
+        env = self.base_env | {
+            "ZONIX_POWERDNS_BACKEND_ENABLED": "false",
+            "ZONIX_POWERDNS_API_URL": "",
+            "ZONIX_POWERDNS_API_KEY": "",
+            "ZONIX_POWERDNS_SERVER_ID": "",
+            "ZONIX_BIND_BACKEND_ENABLED": "true",
+            "ZONIX_BIND_ZONE_NAMES": "lab.example",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            settings = Settings()
+
+        self.assertFalse(settings.powerdns_backend_enabled)
+        self.assertTrue(settings.bind_backend_enabled)
 
 
 if __name__ == "__main__":

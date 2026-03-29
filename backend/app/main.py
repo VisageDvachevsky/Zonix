@@ -14,6 +14,7 @@ from app.access import (
     DatabaseZoneRepository,
 )
 from app.audit import AuditService, DatabaseAuditEventRepository
+from app.api_tokens import ApiTokenService, build_api_token_service_for_user_repository
 from app.auth import (
     AuthIdentityConflictError,
     AuthSelfSignupDisabledError,
@@ -23,6 +24,7 @@ from app.auth import (
     UserRecord,
 )
 from app.config import settings
+from app.control_plane import BulkRecordChange, ControlPlaneService
 from app.database import ping_database
 from app.domain.models import (
     Backend,
@@ -31,7 +33,6 @@ from app.domain.models import (
     ChangeSet,
     IdentityProvider,
     IdentityProviderKind,
-    PermissionGrant,
     RecordSet,
     Role,
     User,
@@ -39,10 +40,8 @@ from app.domain.models import (
 )
 from app.identity_providers import DatabaseIdentityProviderRepository, IdentityProviderService
 from app.oidc import OIDCExchangeError, OIDCProviderNotFoundError, OIDCService, OIDCStateManager
-from app.powerdns import PowerDNSClient, PowerDNSReadAdapter
 from app.record_writes import (
     RecordAlreadyExistsError,
-    RecordMutationResult,
     RecordNotFoundError,
     RecordVersionConflictError,
     RecordWriteNotSupportedError,
@@ -50,11 +49,17 @@ from app.record_writes import (
     RecordWriteService,
     record_version,
 )
-from app.rfc2136 import RFC2136Adapter, RFC2136Client, build_file_snapshot_readers
+from app.runtime import (
+    build_record_write_service,
+    build_zone_read_service,
+    initialize_default_runtime,
+)
 from app.schemas import (
     AdminUserListResponse,
     AdminUserResponse,
     AdminUserRoleRequest,
+    ApiTokenCreateRequest,
+    ApiTokenCreateResponse,
     AuditEventListResponse,
     AuditEventResponse,
     AuthenticatedUserResponse,
@@ -64,6 +69,8 @@ from app.schemas import (
     BackendConfigRequest,
     BackendListResponse,
     BackendResponse,
+    BulkChangeRequest,
+    BulkChangeResponse,
     ChangePreviewRequest,
     ChangeSetResponse,
     HealthResponse,
@@ -75,6 +82,9 @@ from app.schemas import (
     OIDCProviderListResponse,
     OIDCProviderResponse,
     ReadinessResponse,
+    ServiceAccountListResponse,
+    ServiceAccountRequest,
+    ServiceAccountResponse,
     RecordDeleteRequest,
     RecordListResponse,
     RecordSetRequest,
@@ -82,13 +92,15 @@ from app.schemas import (
     ZoneGrantListResponse,
     ZoneGrantRequest,
     ZoneGrantResponse,
+    ZoneDiscoveryResponse,
+    ZoneImportRequest,
+    ZoneImportResponse,
     ZoneListResponse,
     ZoneResponse,
     ZoneSyncResponse,
 )
 from app.zone_reads import (
     UpstreamReadError,
-    ZoneReadAdapter,
     ZoneAdapterNotConfiguredError,
     ZoneNotFoundError,
     ZoneReadService,
@@ -107,12 +119,7 @@ def set_inventory_sync_state(
 
 CSRF_COOKIE_NAME = "zonix_csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
-ALLOWED_BROWSER_RETURN_ORIGINS = {
-    "http://localhost:4173",
-    "http://127.0.0.1:4173",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-}
+ALLOWED_BROWSER_RETURN_ORIGINS = frozenset(settings.allowed_web_origins)
 
 
 def validate_browser_return_to(return_to: str | None) -> str | None:
@@ -176,6 +183,9 @@ def enforce_csrf(request: Request) -> None:
         return
     if request.url.path == "/auth/login":
         return
+    authorization = request.headers.get("Authorization", "")
+    if authorization.startswith("Bearer "):
+        return
 
     session_token = request.cookies.get(settings.session_cookie_name)
     if session_token is None:
@@ -202,6 +212,10 @@ def build_auth_service() -> AuthService:
 
 def build_identity_provider_service() -> IdentityProviderService:
     return IdentityProviderService(DatabaseIdentityProviderRepository(settings.database_url))
+
+
+def build_api_token_service(auth_service: AuthService) -> ApiTokenService:
+    return build_api_token_service_for_user_repository(auth_service.user_repository)
 
 
 def build_oidc_service(identity_provider_service: IdentityProviderService) -> OIDCService:
@@ -231,80 +245,24 @@ def build_access_service() -> AccessService:
     )
 
 
-def build_zone_adapters() -> dict[str, ZoneReadAdapter]:
-    adapters: dict[str, ZoneReadAdapter] = {
-        settings.powerdns_backend_name: PowerDNSReadAdapter(
-            backend_name=settings.powerdns_backend_name,
-            client=PowerDNSClient(
-                api_url=settings.powerdns_api_url,
-                api_key=settings.powerdns_api_key,
-                server_id=settings.powerdns_server_id,
-                timeout_seconds=settings.powerdns_timeout_seconds,
-            ),
-        )
-    }
-
-    if settings.bind_backend_enabled:
-        adapters[settings.bind_backend_name] = RFC2136Adapter(
-            backend_name=settings.bind_backend_name,
-            zone_names=settings.bind_zone_names,
-            client=RFC2136Client(
-                server_host=settings.bind_server_host,
-                port=settings.bind_server_port,
-                timeout_seconds=settings.bind_timeout_seconds,
-                tsig_key_name=settings.bind_tsig_key_name,
-                tsig_secret=settings.bind_tsig_secret,
-                tsig_algorithm=settings.bind_tsig_algorithm,
-            ),
-            axfr_enabled=settings.bind_axfr_enabled,
-            snapshot_readers=build_file_snapshot_readers(settings.bind_snapshot_file_map),
-        )
-
-    return adapters
-
-
-def bind_backend_capabilities() -> tuple[BackendCapability, ...]:
-    capabilities: list[BackendCapability] = [BackendCapability.READ_ZONES]
-
-    if settings.bind_axfr_enabled or settings.bind_snapshot_file_map:
-        capabilities.append(BackendCapability.READ_RECORDS)
-    if settings.bind_snapshot_file_map:
-        capabilities.append(BackendCapability.IMPORT_SNAPSHOT)
-    if settings.bind_axfr_enabled:
-        capabilities.append(BackendCapability.AXFR)
-    if settings.bind_tsig_key_name and settings.bind_tsig_secret:
-        capabilities.extend(
-            (
-                BackendCapability.WRITE_RECORDS,
-                BackendCapability.RFC2136_UPDATE,
-            )
-        )
-
-    return tuple(capabilities)
-
-
-def build_zone_read_service(access_service: AccessService) -> ZoneReadService:
-    return ZoneReadService(
-        access_service=access_service,
-        adapters=build_zone_adapters(),
-    )
-
-
-def build_record_write_service(
-    access_service: AccessService,
-    zone_read_service: ZoneReadService,
-) -> RecordWriteService:
-    return RecordWriteService(
-        access_service=access_service,
-        zone_read_service=zone_read_service,
-        adapters=zone_read_service.adapters,
-    )
-
-
 def build_audit_service(access_service: AccessService) -> AuditService:
     return AuditService(
         repository=DatabaseAuditEventRepository(settings.database_url),
         access_service=access_service,
+    )
+
+
+def build_control_plane_service(
+    access_service: AccessService,
+    zone_read_service: ZoneReadService,
+    record_write_service: RecordWriteService,
+    audit_service: AuditService,
+) -> ControlPlaneService:
+    return ControlPlaneService(
+        access_service=access_service,
+        zone_read_service=zone_read_service,
+        record_write_service=record_write_service,
+        audit_service=audit_service,
     )
 
 
@@ -330,85 +288,26 @@ def record_set_from_change_preview(payload: ChangePreviewRequest) -> RecordSet:
     )
 
 
-def synchronize_backend_inventory(
-    access_service: AccessService,
-    zone_read_service: ZoneReadService,
-    backend_name: str,
-) -> tuple[ZoneResponse, ...]:
-    adapter = zone_read_service.adapters.get(backend_name)
-    if adapter is None:
-        raise ZoneAdapterNotConfiguredError(backend_name)
+def bulk_record_change_from_request(
+    zone_name: str,
+    payload: BulkChangeRequest,
+) -> tuple[BulkRecordChange, ...]:
+    if payload.zone_name != zone_name:
+        raise ValueError("zone mismatch")
 
-    synchronized = access_service.sync_backend_zones(backend_name, adapter.list_zones())
     return tuple(
-        ZoneResponse(name=zone.name, backendName=zone.backend_name) for zone in synchronized
+        BulkRecordChange(
+            operation=item.operation,
+            zone_name=payload.zone_name,
+            name=item.name,
+            record_type=item.record_type,
+            ttl=item.ttl,
+            values=item.values,
+            expected_version=item.expected_version,
+            enforce_version="expected_version" in item.model_fields_set,
+        )
+        for item in payload.items
     )
-
-
-def synchronize_bootstrap_zone_grants(access_service: AccessService) -> None:
-    grants_by_user: dict[str, list[PermissionGrant]] = {}
-    for grant in settings.bootstrap_zone_grants:
-        username = str(grant["username"])
-        grants_by_user.setdefault(username, []).append(
-            PermissionGrant(
-                username=username,
-                zone_name=str(grant["zoneName"]),
-                actions=tuple(ZoneAction(str(action)) for action in grant["actions"]),
-            )
-        )
-    for username, grants in grants_by_user.items():
-        access_service.sync_zone_grants_for_user(username=username, grants=tuple(grants))
-
-
-def initialize_default_runtime(
-    app: FastAPI,
-    access_service: AccessService,
-    zone_read_service: ZoneReadService,
-) -> None:
-    access_service.register_backend(
-        Backend(
-            name=settings.powerdns_backend_name,
-            backend_type="powerdns",
-            capabilities=(
-                BackendCapability.READ_ZONES,
-                BackendCapability.READ_RECORDS,
-                BackendCapability.WRITE_RECORDS,
-            ),
-        )
-    )
-    if settings.bind_backend_enabled:
-        access_service.register_backend(
-            Backend(
-                name=settings.bind_backend_name,
-                backend_type="rfc2136-bind",
-                capabilities=bind_backend_capabilities(),
-            )
-        )
-
-    sync_errors: list[str] = []
-    try:
-        for backend_name in zone_read_service.adapters:
-            synchronize_backend_inventory(
-                access_service,
-                zone_read_service,
-                backend_name,
-            )
-        synchronize_bootstrap_zone_grants(access_service)
-    except (UpstreamReadError, ZoneAdapterNotConfiguredError) as error:
-        sync_errors.append(str(error))
-
-    if sync_errors:
-        set_inventory_sync_state(
-            app,
-            status="failed",
-            error="; ".join(sync_errors),
-        )
-    else:
-        set_inventory_sync_state(
-            app,
-            status="ok",
-            error=None,
-        )
 
 
 def get_auth_service(request: Request) -> AuthService:
@@ -439,6 +338,14 @@ def get_oidc_service(request: Request) -> OIDCService:
     return request.app.state.oidc_service
 
 
+def get_control_plane_service(request: Request) -> ControlPlaneService:
+    return request.app.state.control_plane_service
+
+
+def get_api_token_service(request: Request) -> ApiTokenService:
+    return request.app.state.api_token_service
+
+
 AuthServiceDependency = Annotated[AuthService, Depends(get_auth_service)]
 AccessServiceDependency = Annotated[AccessService, Depends(get_access_service)]
 IdentityProviderServiceDependency = Annotated[
@@ -448,17 +355,8 @@ ZoneReadServiceDependency = Annotated[ZoneReadService, Depends(get_zone_read_ser
 RecordWriteServiceDependency = Annotated[RecordWriteService, Depends(get_record_write_service)]
 AuditServiceDependency = Annotated[AuditService, Depends(get_audit_service)]
 OIDCServiceDependency = Annotated[OIDCService, Depends(get_oidc_service)]
-
-
-def audit_payload_from_mutation(mutation: RecordMutationResult) -> dict[str, object]:
-    return {
-        "name": mutation.record.name,
-        "recordType": mutation.record.record_type,
-        "ttl": mutation.record.ttl,
-        "values": list(mutation.record.values),
-        "beforeVersion": mutation.change_set.current_version,
-        "afterVersion": record_version(mutation.change_set.after),
-    }
+ControlPlaneServiceDependency = Annotated[ControlPlaneService, Depends(get_control_plane_service)]
+ApiTokenServiceDependency = Annotated[ApiTokenService, Depends(get_api_token_service)]
 
 
 def backend_response_from_backend(backend: Backend) -> BackendResponse:
@@ -485,6 +383,15 @@ def identity_provider_response_from_provider(
 
 def admin_user_response_from_record(user: UserRecord) -> AdminUserResponse:
     return AdminUserResponse(
+        username=user.username,
+        role=user.role,
+        authSource=user.auth_source,
+        isActive=user.is_active,
+    )
+
+
+def service_account_response_from_record(user: UserRecord) -> ServiceAccountResponse:
+    return ServiceAccountResponse(
         username=user.username,
         role=user.role,
         authSource=user.auth_source,
@@ -524,12 +431,35 @@ def change_set_response_from_change_set(change_set: ChangeSet) -> ChangeSetRespo
     )
 
 
+def bulk_change_response(
+    zone_name: str,
+    *,
+    applied: bool,
+    changes: tuple[ChangeSet, ...],
+) -> BulkChangeResponse:
+    return BulkChangeResponse(
+        zoneName=zone_name,
+        applied=applied,
+        hasConflicts=any(change.has_conflict for change in changes),
+        items=tuple(change_set_response_from_change_set(change) for change in changes),
+    )
+
+
+def zone_response_from_zone(zone: Zone) -> ZoneResponse:
+    return ZoneResponse(name=zone.name, backendName=zone.backend_name)
+
+
 def get_current_user(
     request: Request,
     auth_service: AuthServiceDependency,
+    api_token_service: ApiTokenServiceDependency,
 ) -> AuthenticatedUserResponse:
-    session_token = request.cookies.get(settings.session_cookie_name)
-    user = auth_service.get_authenticated_user(session_token)
+    authorization = request.headers.get("Authorization", "")
+    bearer_token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else None
+    user = api_token_service.authenticate(bearer_token)
+    if user is None:
+        session_token = request.cookies.get(settings.session_cookie_name)
+        user = auth_service.get_authenticated_user(session_token)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -544,7 +474,13 @@ CurrentUserDependency = Annotated[AuthenticatedUserResponse, Depends(get_current
 def authenticated_user_from_request(
     request: Request,
     auth_service: AuthService,
+    api_token_service: ApiTokenService,
 ) -> User | None:
+    authorization = request.headers.get("Authorization", "")
+    bearer_token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else None
+    user = api_token_service.authenticate(bearer_token)
+    if user is not None:
+        return user
     session_token = request.cookies.get(settings.session_cookie_name)
     return auth_service.get_authenticated_user(session_token)
 
@@ -567,18 +503,22 @@ AdminUserDependency = Annotated[AuthenticatedUserResponse, Depends(require_admin
 
 def create_app(
     auth_service: AuthService | None = None,
+    api_token_service: ApiTokenService | None = None,
     access_service: AccessService | None = None,
     identity_provider_service: IdentityProviderService | None = None,
     zone_read_service: ZoneReadService | None = None,
     record_write_service: RecordWriteService | None = None,
+    control_plane_service: ControlPlaneService | None = None,
     audit_service: AuditService | None = None,
     oidc_service: OIDCService | None = None,
 ) -> FastAPI:
     using_default_runtime = (
         access_service is None
+        and api_token_service is None
         and identity_provider_service is None
         and zone_read_service is None
         and record_write_service is None
+        and control_plane_service is None
         and audit_service is None
         and oidc_service is None
     )
@@ -586,16 +526,23 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if app.state.using_default_runtime:
-            initialize_default_runtime(
-                app,
+            initialization_result = initialize_default_runtime(
                 app.state.access_service,
                 app.state.zone_read_service,
+            )
+            set_inventory_sync_state(
+                app,
+                status=initialization_result.status,
+                error=initialization_result.error,
             )
         yield
 
     app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
     app.state.auth_service = auth_service or build_auth_service()
+    app.state.api_token_service = api_token_service or build_api_token_service(
+        app.state.auth_service
+    )
     app.state.access_service = access_service or build_access_service()
     app.state.identity_provider_service = (
         identity_provider_service or build_identity_provider_service()
@@ -608,18 +555,19 @@ def create_app(
         app.state.zone_read_service,
     )
     app.state.audit_service = audit_service or build_audit_service(app.state.access_service)
+    app.state.control_plane_service = control_plane_service or build_control_plane_service(
+        app.state.access_service,
+        app.state.zone_read_service,
+        app.state.record_write_service,
+        app.state.audit_service,
+    )
     app.state.oidc_service = oidc_service or build_oidc_service(app.state.identity_provider_service)
     app.state.using_default_runtime = using_default_runtime
     set_inventory_sync_state(app, status=None, error=None)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:4173",
-            "http://127.0.0.1:4173",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-        ],
+        allow_origins=list(settings.allowed_web_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -688,9 +636,10 @@ def create_app(
         response: Response,
         _csrf: CsrfDependency,
         auth_service: AuthServiceDependency,
+        api_token_service: ApiTokenServiceDependency,
         audit_service: AuditServiceDependency,
     ) -> AuthSessionResponse:
-        user = authenticated_user_from_request(request, auth_service)
+        user = authenticated_user_from_request(request, auth_service, api_token_service)
         if user is not None:
             user_record = auth_service.user_repository.get_by_username(user.username)
             audit_service.log_event(
@@ -877,6 +826,81 @@ def create_app(
             items=tuple(admin_user_response_from_record(user) for user in auth_service.list_users())
         )
 
+    @app.get("/admin/service-accounts", response_model=ServiceAccountListResponse)
+    def list_service_accounts(
+        _admin_user: AdminUserDependency,
+        api_token_service: ApiTokenServiceDependency,
+    ) -> ServiceAccountListResponse:
+        return ServiceAccountListResponse(
+            items=tuple(
+                service_account_response_from_record(account)
+                for account in api_token_service.list_service_accounts()
+            )
+        )
+
+    @app.post("/admin/service-accounts", response_model=ServiceAccountResponse)
+    def create_service_account(
+        payload: ServiceAccountRequest,
+        _csrf: CsrfDependency,
+        admin_user: AdminUserDependency,
+        api_token_service: ApiTokenServiceDependency,
+        audit_service: AuditServiceDependency,
+    ) -> ServiceAccountResponse:
+        try:
+            service_account = api_token_service.create_service_account(
+                username=payload.username,
+                role=payload.role,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+        audit_service.log_event(
+            actor=admin_user.username,
+            action="service_account.created",
+            payload={"username": service_account.username, "role": service_account.role.value},
+        )
+        return service_account_response_from_record(service_account)
+
+    @app.post(
+        "/admin/service-accounts/{username}/tokens",
+        response_model=ApiTokenCreateResponse,
+    )
+    def create_service_account_token(
+        username: str,
+        payload: ApiTokenCreateRequest,
+        _csrf: CsrfDependency,
+        admin_user: AdminUserDependency,
+        api_token_service: ApiTokenServiceDependency,
+        audit_service: AuditServiceDependency,
+    ) -> ApiTokenCreateResponse:
+        try:
+            issued_token = api_token_service.issue_token(
+                username=username,
+                token_name=payload.name,
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+        audit_service.log_event(
+            actor=admin_user.username,
+            action="api_token.created",
+            payload={
+                "username": username,
+                "tokenName": issued_token.record.token_name,
+            },
+        )
+        return ApiTokenCreateResponse(
+            username=username,
+            tokenName=issued_token.record.token_name,
+            token=issued_token.token,
+        )
+
     @app.put("/admin/users/{username}/role", response_model=AdminUserResponse)
     def update_admin_user_role(
         username: str,
@@ -1025,9 +1049,11 @@ def create_app(
     @app.get("/backends", response_model=BackendListResponse)
     def list_backends(
         current_user: CurrentUserDependency,
-        access_service: AccessServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> BackendListResponse:
-        backends = access_service.list_accessible_backends(current_user)
+        backends = control_plane_service.list_backends(
+            User(username=current_user.username, role=current_user.role)
+        )
         return BackendListResponse(
             items=tuple(backend_response_from_backend(backend) for backend in backends)
         )
@@ -1035,10 +1061,10 @@ def create_app(
     @app.get("/zones", response_model=ZoneListResponse)
     def list_zones(
         current_user: CurrentUserDependency,
-        zone_read_service: ZoneReadServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> ZoneListResponse:
         try:
-            zones = zone_read_service.list_zones(
+            zones = control_plane_service.list_zones(
                 User(username=current_user.username, role=current_user.role)
             )
         except ZoneAdapterNotConfiguredError as error:
@@ -1063,10 +1089,10 @@ def create_app(
     def get_zone(
         zone_name: str,
         current_user: CurrentUserDependency,
-        zone_read_service: ZoneReadServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> ZoneResponse:
         try:
-            zone = zone_read_service.get_zone(
+            zone = control_plane_service.get_zone(
                 User(username=current_user.username, role=current_user.role),
                 zone_name=zone_name,
             )
@@ -1087,10 +1113,10 @@ def create_app(
     def list_zone_records(
         zone_name: str,
         current_user: CurrentUserDependency,
-        zone_read_service: ZoneReadServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> RecordListResponse:
         try:
-            records = zone_read_service.list_records(
+            records = control_plane_service.list_records(
                 User(username=current_user.username, role=current_user.role),
                 zone_name=zone_name,
             )
@@ -1115,29 +1141,33 @@ def create_app(
         payload: ChangePreviewRequest,
         _csrf: CsrfDependency,
         current_user: CurrentUserDependency,
-        record_write_service: RecordWriteServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> ChangeSetResponse:
         if payload.zone_name != zone_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="zone mismatch")
 
         try:
+            user = User(username=current_user.username, role=current_user.role)
             if payload.operation == ChangeOperation.CREATE:
-                change_set = record_write_service.preview_create_record(
-                    User(username=current_user.username, role=current_user.role),
-                    record_set_from_change_preview(payload),
+                change_set = control_plane_service.preview_change(
+                    user,
+                    operation=payload.operation,
+                    record_set=record_set_from_change_preview(payload),
                     expected_version=payload.expected_version,
                     enforce_version="expected_version" in payload.model_fields_set,
                 )
             elif payload.operation == ChangeOperation.UPDATE:
-                change_set = record_write_service.preview_update_record(
-                    User(username=current_user.username, role=current_user.role),
-                    record_set_from_change_preview(payload),
+                change_set = control_plane_service.preview_change(
+                    user,
+                    operation=payload.operation,
+                    record_set=record_set_from_change_preview(payload),
                     expected_version=payload.expected_version,
                     enforce_version="expected_version" in payload.model_fields_set,
                 )
             else:
-                change_set = record_write_service.preview_delete_record(
-                    User(username=current_user.username, role=current_user.role),
+                change_set = control_plane_service.preview_change(
+                    user,
+                    operation=payload.operation,
                     zone_name=payload.zone_name,
                     name=payload.name,
                     record_type=payload.record_type,
@@ -1163,20 +1193,63 @@ def create_app(
 
         return change_set_response_from_change_set(change_set)
 
+    @app.post("/zones/{zone_name}/changes/bulk", response_model=BulkChangeResponse)
+    def apply_bulk_zone_changes(
+        zone_name: str,
+        payload: BulkChangeRequest,
+        _csrf: CsrfDependency,
+        current_user: CurrentUserDependency,
+        control_plane_service: ControlPlaneServiceDependency,
+    ) -> BulkChangeResponse:
+        try:
+            changes = bulk_record_change_from_request(zone_name, payload)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+        try:
+            result = control_plane_service.apply_bulk_changes(
+                User(username=current_user.username, role=current_user.role),
+                zone_name=zone_name,
+                changes=changes,
+            )
+        except ZoneNotFoundError as error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        except RecordWritePermissionError as error:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+        except RecordWriteNotSupportedError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+            ) from error
+        except RecordAlreadyExistsError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        except RecordNotFoundError as error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+        except RecordVersionConflictError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+        except ZoneAdapterNotConfiguredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(error)
+            ) from error
+        except UpstreamReadError as error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
+            ) from error
+
+        return bulk_change_response(zone_name, applied=result.applied, changes=result.changes)
+
     @app.post("/zones/{zone_name}/records", response_model=RecordSetResponse)
     def create_zone_record(
         zone_name: str,
         payload: RecordSetRequest,
         _csrf: CsrfDependency,
         current_user: CurrentUserDependency,
-        record_write_service: RecordWriteServiceDependency,
-        audit_service: AuditServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> RecordSetResponse:
         if payload.zone_name != zone_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="zone mismatch")
 
         try:
-            mutation = record_write_service.create_record(
+            record = control_plane_service.create_record(
                 User(username=current_user.username, role=current_user.role),
                 record_set_from_request(payload),
                 expected_version=payload.expected_version,
@@ -1203,15 +1276,7 @@ def create_app(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
             ) from error
 
-        audit_service.log_event(
-            actor=current_user.username,
-            action="record.created",
-            zone_name=mutation.record.zone_name,
-            backend_name=mutation.backend_name,
-            payload=audit_payload_from_mutation(mutation),
-        )
-
-        return record_response_from_record(mutation.record)
+        return record_response_from_record(record)
 
     @app.put("/zones/{zone_name}/records", response_model=RecordSetResponse)
     def update_zone_record(
@@ -1219,14 +1284,13 @@ def create_app(
         payload: RecordSetRequest,
         _csrf: CsrfDependency,
         current_user: CurrentUserDependency,
-        record_write_service: RecordWriteServiceDependency,
-        audit_service: AuditServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> RecordSetResponse:
         if payload.zone_name != zone_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="zone mismatch")
 
         try:
-            mutation = record_write_service.update_record(
+            record = control_plane_service.update_record(
                 User(username=current_user.username, role=current_user.role),
                 record_set_from_request(payload),
                 expected_version=payload.expected_version,
@@ -1253,15 +1317,7 @@ def create_app(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
             ) from error
 
-        audit_service.log_event(
-            actor=current_user.username,
-            action="record.updated",
-            zone_name=mutation.record.zone_name,
-            backend_name=mutation.backend_name,
-            payload=audit_payload_from_mutation(mutation),
-        )
-
-        return record_response_from_record(mutation.record)
+        return record_response_from_record(record)
 
     @app.delete("/zones/{zone_name}/records", status_code=status.HTTP_204_NO_CONTENT)
     def delete_zone_record(
@@ -1269,14 +1325,13 @@ def create_app(
         payload: RecordDeleteRequest,
         _csrf: CsrfDependency,
         current_user: CurrentUserDependency,
-        record_write_service: RecordWriteServiceDependency,
-        audit_service: AuditServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> Response:
         if payload.zone_name != zone_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="zone mismatch")
 
         try:
-            mutation = record_write_service.delete_record(
+            control_plane_service.delete_record(
                 User(username=current_user.username, role=current_user.role),
                 zone_name=payload.zone_name,
                 name=payload.name,
@@ -1304,14 +1359,6 @@ def create_app(
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
             ) from error
-
-        audit_service.log_event(
-            actor=current_user.username,
-            action="record.deleted",
-            zone_name=mutation.record.zone_name,
-            backend_name=mutation.backend_name,
-            payload=audit_payload_from_mutation(mutation),
-        )
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1382,6 +1429,73 @@ def create_app(
             actions=tuple(action.value for action in grant.actions),
         )
 
+    @app.get(
+        "/admin/backends/{backend_name}/zones/discover",
+        response_model=ZoneDiscoveryResponse,
+    )
+    def discover_backend_zones(
+        backend_name: str,
+        _admin_user: AdminUserDependency,
+        control_plane_service: ControlPlaneServiceDependency,
+    ) -> ZoneDiscoveryResponse:
+        try:
+            discovered = control_plane_service.discover_backend_zones(backend_name)
+        except ZoneAdapterNotConfiguredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(error)
+            ) from error
+        except UpstreamReadError as error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
+            ) from error
+
+        return ZoneDiscoveryResponse(
+            backendName=backend_name,
+            items=tuple(
+                {
+                    "name": zone.name,
+                    "backendName": zone.backend_name,
+                    "managed": zone.managed,
+                }
+                for zone in discovered
+            ),
+        )
+
+    @app.post(
+        "/admin/backends/{backend_name}/zones/import",
+        response_model=ZoneImportResponse,
+    )
+    def import_backend_zones(
+        backend_name: str,
+        payload: ZoneImportRequest,
+        _csrf: CsrfDependency,
+        _admin_user: AdminUserDependency,
+        control_plane_service: ControlPlaneServiceDependency,
+    ) -> ZoneImportResponse:
+        try:
+            imported = control_plane_service.import_backend_zones(
+                backend_name,
+                zone_names=payload.zone_names,
+            )
+        except ZoneAdapterNotConfiguredError as error:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(error)
+            ) from error
+        except UpstreamReadError as error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)
+            ) from error
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+        return ZoneImportResponse(
+            backendName=backend_name,
+            importedZones=tuple(zone_response_from_zone(zone) for zone in imported),
+        )
+
     @app.post(
         "/admin/backends/{backend_name}/zones/sync",
         response_model=ZoneSyncResponse,
@@ -1390,13 +1504,10 @@ def create_app(
         backend_name: str,
         _csrf: CsrfDependency,
         _admin_user: AdminUserDependency,
-        access_service: AccessServiceDependency,
-        zone_read_service: ZoneReadServiceDependency,
+        control_plane_service: ControlPlaneServiceDependency,
     ) -> ZoneSyncResponse:
         try:
-            synchronized = synchronize_backend_inventory(
-                access_service,
-                zone_read_service,
+            synchronized = control_plane_service.sync_backend_zones(
                 backend_name,
             )
         except ZoneAdapterNotConfiguredError as error:
@@ -1415,7 +1526,7 @@ def create_app(
 
         return ZoneSyncResponse(
             backendName=backend_name,
-            syncedZones=synchronized,
+            syncedZones=tuple(zone_response_from_zone(zone) for zone in synchronized),
         )
 
     return app

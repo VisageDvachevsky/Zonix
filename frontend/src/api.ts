@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createGeneratedApiClient } from "./generated/client";
 
 export const healthResponseSchema = z.object({
   status: z.string().min(1),
@@ -101,6 +102,22 @@ export const adminUserListResponseSchema = z.object({
 export type AdminUserListResponse = z.infer<typeof adminUserListResponseSchema>;
 export type AdminUser = z.infer<typeof adminUserSchema>;
 
+export const serviceAccountSchema = adminUserSchema;
+export const serviceAccountListResponseSchema = z.object({
+  items: z.array(serviceAccountSchema),
+});
+export const apiTokenCreateResponseSchema = z.object({
+  username: z.string().min(1),
+  tokenName: z.string().min(1),
+  token: z.string().min(1),
+});
+
+export type ServiceAccount = z.infer<typeof serviceAccountSchema>;
+export type ServiceAccountListResponse = z.infer<
+  typeof serviceAccountListResponseSchema
+>;
+export type ApiTokenCreateResponse = z.infer<typeof apiTokenCreateResponseSchema>;
+
 export const backendConfigRequestSchema = z.object({
   name: z.string().min(1),
   backendType: z.string().min(1),
@@ -138,6 +155,29 @@ export const zoneGrantListResponseSchema = z.object({
 
 export type ZoneGrantListResponse = z.infer<typeof zoneGrantListResponseSchema>;
 export type ZoneGrant = z.infer<typeof zoneGrantSchema>;
+
+export const discoveredZoneSchema = z.object({
+  name: z.string().min(1),
+  backendName: z.string().min(1),
+  managed: z.boolean(),
+});
+export const zoneDiscoveryResponseSchema = z.object({
+  backendName: z.string().min(1),
+  items: z.array(discoveredZoneSchema),
+});
+export const zoneImportResponseSchema = z.object({
+  backendName: z.string().min(1),
+  importedZones: z.array(
+    z.object({
+      name: z.string().min(1),
+      backendName: z.string().min(1),
+    }),
+  ),
+});
+
+export type DiscoveredZone = z.infer<typeof discoveredZoneSchema>;
+export type ZoneDiscoveryResponse = z.infer<typeof zoneDiscoveryResponseSchema>;
+export type ZoneImportResponse = z.infer<typeof zoneImportResponseSchema>;
 
 export const zoneSchema = z.object({
   name: z.string().min(1),
@@ -295,6 +335,73 @@ export type RecordListResponse = z.infer<typeof recordListResponseSchema>;
 export type RecordSet = z.infer<typeof recordSetSchema>;
 export type RecordType = z.infer<typeof recordTypeSchema>;
 
+export const bulkChangeItemSchema = z
+  .object({
+    operation: z.enum(["create", "update", "delete"]),
+    name: z.string().min(1),
+    recordType: recordTypeSchema,
+    ttl: z.number().int().positive().optional(),
+    values: z.array(z.string().min(1)).optional(),
+    expectedVersion: z.string().min(1).optional(),
+  })
+  .superRefine((item, ctx) => {
+    if (item.operation === "delete") {
+      if (item.ttl !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "ttl is not allowed for delete bulk changes",
+          path: ["ttl"],
+        });
+      }
+      if (item.values !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "values are not allowed for delete bulk changes",
+          path: ["values"],
+        });
+      }
+      return;
+    }
+
+    if (item.ttl === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "ttl is required for create/update bulk changes",
+        path: ["ttl"],
+      });
+    }
+    if (!item.values || item.values.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "values are required for create/update bulk changes",
+        path: ["values"],
+      });
+    }
+  });
+export const bulkChangeResponseSchema = z.object({
+  zoneName: z.string().min(1),
+  applied: z.boolean(),
+  hasConflicts: z.boolean(),
+  items: z.array(
+    z.object({
+      actor: z.string().min(1),
+      zoneName: z.string().min(1),
+      backendName: z.string().min(1),
+      operation: z.enum(["create", "update", "delete"]),
+      before: recordSetSchema.nullable().optional(),
+      after: recordSetSchema.nullable().optional(),
+      expectedVersion: z.string().min(1).nullable().optional(),
+      currentVersion: z.string().min(1).nullable().optional(),
+      hasConflict: z.boolean(),
+      conflictReason: z.string().min(1).nullable().optional(),
+      summary: z.string().min(1),
+    }),
+  ),
+});
+
+export type BulkChangeItem = z.infer<typeof bulkChangeItemSchema>;
+export type BulkChangeResponse = z.infer<typeof bulkChangeResponseSchema>;
+
 const fallbackApiBaseUrl =
   typeof window === "undefined"
     ? "http://127.0.0.1:8000"
@@ -323,6 +430,7 @@ function normalizeApiBaseUrl(rawApiBaseUrl: string) {
 const apiBaseUrl = normalizeApiBaseUrl(
   import.meta.env.VITE_API_BASE_URL ?? fallbackApiBaseUrl,
 );
+export const generatedApiClient = createGeneratedApiClient(apiBaseUrl);
 const csrfCookieName = "zonix_csrf_token";
 const csrfHeaderName = "X-CSRF-Token";
 
@@ -347,24 +455,47 @@ function withCsrfHeaders(headers: Record<string, string>) {
   return csrfToken ? { ...headers, [csrfHeaderName]: csrfToken } : headers;
 }
 
-export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${apiBaseUrl}/health`, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Backend health check failed with status ${response.status}`,
-    );
+function detailFromError(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "detail" in error &&
+    typeof (error as { detail?: unknown }).detail === "string"
+  ) {
+    return (error as { detail: string }).detail;
   }
+  return null;
+}
 
-  return healthResponseSchema.parse(await response.json());
+async function unwrapGeneratedResponse<T>(
+  request: Promise<{
+    data?: unknown;
+    error?: unknown;
+    response: Response;
+  }>,
+  fallbackMessage: string,
+  schema?: z.ZodType<T>,
+): Promise<T> {
+  const { data, error, response } = await request;
+  if (!response.ok || data === undefined) {
+    const detail = detailFromError(error);
+    throw new Error(detail ?? `${fallbackMessage} with status ${response.status}`);
+  }
+  return schema ? schema.parse(data) : (data as T);
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/health", {
+      headers: { Accept: "application/json" },
+    }),
+    "Backend health check failed",
+    healthResponseSchema,
+  );
 }
 
 export async function fetchSession(): Promise<SessionResponse> {
-  const response = await fetch(`${apiBaseUrl}/auth/me`, {
+  const { data, response } = await generatedApiClient.GET("/auth/me", {
     credentials: "include",
     headers: {
       Accept: "application/json",
@@ -375,63 +506,54 @@ export async function fetchSession(): Promise<SessionResponse> {
     return { authenticated: false, user: null };
   }
 
-  if (!response.ok) {
+  if (!response.ok || data === undefined) {
     throw new Error(`Session lookup failed with status ${response.status}`);
   }
 
-  return sessionResponseSchema.parse(await response.json());
+  return sessionResponseSchema.parse(data);
 }
 
 export async function fetchAuthSettings(): Promise<AuthSettingsResponse> {
-  const response = await fetch(`${apiBaseUrl}/auth/settings`, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Auth settings lookup failed with status ${response.status}`,
-    );
-  }
-
-  return authSettingsResponseSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/auth/settings", {
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Auth settings lookup failed",
+    authSettingsResponseSchema,
+  );
 }
 
 export async function fetchOidcProviders(): Promise<OidcProviderListResponse> {
-  const response = await fetch(`${apiBaseUrl}/auth/oidc/providers`, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`OIDC provider lookup failed with status ${response.status}`);
-  }
-
-  return oidcProviderListResponseSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/auth/oidc/providers", {
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "OIDC provider lookup failed",
+    oidcProviderListResponseSchema,
+  );
 }
 
 export async function startOidcLogin(input: {
   providerName: string;
   returnTo: string;
 }): Promise<OidcLoginStartResponse> {
-  const url = new URL(
-    `${apiBaseUrl}/auth/oidc/${encodeURIComponent(input.providerName)}/login`,
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/auth/oidc/{provider_name}/login", {
+      params: {
+        path: { provider_name: input.providerName },
+        query: { return_to: input.returnTo },
+      },
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "OIDC login start failed",
+    oidcLoginStartResponseSchema,
   );
-  url.searchParams.set("return_to", input.returnTo);
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`OIDC login start failed with status ${response.status}`);
-  }
-
-  return oidcLoginStartResponseSchema.parse(await response.json());
 }
 
 export async function login(input: {
@@ -439,109 +561,90 @@ export async function login(input: {
   password: string;
 }): Promise<SessionResponse> {
   const payload = loginRequestSchema.parse(input);
-  const response = await fetch(`${apiBaseUrl}/auth/login`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error("Invalid username or password");
-  }
-
-  return sessionResponseSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/auth/login", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: payload,
+    }),
+    "Invalid username or password",
+    sessionResponseSchema,
+  );
 }
 
 export async function logout(): Promise<SessionResponse> {
-  const response = await fetch(`${apiBaseUrl}/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-    headers: withCsrfHeaders({
-      Accept: "application/json",
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/auth/logout", {
+      credentials: "include",
+      headers: withCsrfHeaders({
+        Accept: "application/json",
+      }),
     }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Logout failed with status ${response.status}`);
-  }
-
-  return sessionResponseSchema.parse(await response.json());
+    "Logout failed",
+    sessionResponseSchema,
+  );
 }
 
 export async function fetchBackends(): Promise<BackendListResponse> {
-  const response = await fetch(`${apiBaseUrl}/backends`, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend listing failed with status ${response.status}`);
-  }
-
-  return backendListResponseSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/backends", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Backend listing failed",
+    backendListResponseSchema,
+  );
 }
 
 export async function fetchAdminUsers(): Promise<AdminUserListResponse> {
-  const response = await fetch(`${apiBaseUrl}/admin/users`, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Admin user listing failed with status ${response.status}`);
-  }
-
-  return adminUserListResponseSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/admin/users", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Admin user listing failed",
+    adminUserListResponseSchema,
+  );
 }
 
 export async function updateAdminUserRole(input: {
   username: string;
   role: "admin" | "editor" | "viewer";
 }) {
-  const response = await fetch(
-    `${apiBaseUrl}/admin/users/${encodeURIComponent(input.username)}/role`,
-    {
-      method: "PUT",
+  return unwrapGeneratedResponse(
+    generatedApiClient.PUT("/admin/users/{username}/role", {
+      params: { path: { username: input.username } },
       credentials: "include",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
         ...withCsrfHeaders({}),
       },
-      body: JSON.stringify({ role: input.role }),
-    },
+      body: { role: input.role },
+    }),
+    "User role update failed",
+    adminUserSchema,
   );
-
-  if (!response.ok) {
-    throw new Error(`User role update failed with status ${response.status}`);
-  }
-
-  return adminUserSchema.parse(await response.json());
 }
 
 export async function fetchAdminBackends(): Promise<BackendListResponse> {
-  const response = await fetch(`${apiBaseUrl}/admin/backends`, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Admin backend listing failed with status ${response.status}`,
-    );
-  }
-
-  return backendListResponseSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/admin/backends", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Admin backend listing failed",
+    backendListResponseSchema,
+  );
 }
 
 export async function createAdminBackend(input: {
@@ -550,84 +653,102 @@ export async function createAdminBackend(input: {
   capabilities: string[];
 }) {
   const payload = backendConfigRequestSchema.parse(input);
-  const response = await fetch(`${apiBaseUrl}/admin/backends`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...withCsrfHeaders({}),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Admin backend save failed with status ${response.status}`);
-  }
-
-  return backendSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/admin/backends", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: payload,
+    }),
+    "Admin backend save failed",
+    backendSchema,
+  );
 }
 
 export async function deleteAdminBackend(backendName: string) {
-  const response = await fetch(
-    `${apiBaseUrl}/admin/backends/${encodeURIComponent(backendName)}`,
-    {
-      method: "DELETE",
+  await unwrapGeneratedResponse(
+    generatedApiClient.DELETE("/admin/backends/{backend_name}", {
+      params: { path: { backend_name: backendName } },
       credentials: "include",
       headers: {
         Accept: "application/json",
         ...withCsrfHeaders({}),
       },
-    },
+    }),
+    "Admin backend delete failed",
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `Admin backend delete failed with status ${response.status}`,
-    );
-  }
 }
 
 export async function syncAdminBackendZones(backendName: string) {
-  const response = await fetch(
-    `${apiBaseUrl}/admin/backends/${encodeURIComponent(backendName)}/zones/sync`,
-    {
-      method: "POST",
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/admin/backends/{backend_name}/zones/sync", {
+      params: { path: { backend_name: backendName } },
       credentials: "include",
       headers: {
         Accept: "application/json",
         ...withCsrfHeaders({}),
       },
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Backend sync failed with status ${response.status}`);
-  }
-
-  return z
-    .object({
+    }),
+    "Backend sync failed",
+    z.object({
       backendName: z.string().min(1),
       syncedZones: z.array(zoneSchema),
-    })
-    .parse(await response.json());
+    }),
+  );
+}
+
+export async function discoverAdminBackendZones(
+  backendName: string,
+): Promise<ZoneDiscoveryResponse> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/admin/backends/{backend_name}/zones/discover", {
+      params: { path: { backend_name: backendName } },
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Backend discovery failed",
+    zoneDiscoveryResponseSchema,
+  );
+}
+
+export async function importAdminBackendZones(input: {
+  backendName: string;
+  zoneNames?: string[];
+}): Promise<ZoneImportResponse> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/admin/backends/{backend_name}/zones/import", {
+      params: { path: { backend_name: input.backendName } },
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: {
+        zoneNames: input.zoneNames,
+      },
+    }),
+    "Backend import failed",
+    zoneImportResponseSchema,
+  );
 }
 
 export async function fetchAdminIdentityProviders(): Promise<IdentityProviderConfigListResponse> {
-  const response = await fetch(`${apiBaseUrl}/admin/identity-providers`, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Identity provider listing failed with status ${response.status}`,
-    );
-  }
-
-  return identityProviderConfigListResponseSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/admin/identity-providers", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Identity provider listing failed",
+    identityProviderConfigListResponseSchema,
+  );
 }
 
 export async function createAdminIdentityProvider(input: {
@@ -650,64 +771,49 @@ export async function createAdminIdentityProvider(input: {
       claimsMappingRules: z.record(z.string(), z.unknown()),
     })
     .parse(input);
-  const response = await fetch(`${apiBaseUrl}/admin/identity-providers`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...withCsrfHeaders({}),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Identity provider save failed with status ${response.status}`,
-    );
-  }
-
-  return identityProviderConfigSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/admin/identity-providers", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: payload,
+    }),
+    "Identity provider save failed",
+    identityProviderConfigSchema,
+  );
 }
 
 export async function deleteAdminIdentityProvider(providerName: string) {
-  const response = await fetch(
-    `${apiBaseUrl}/admin/identity-providers/${encodeURIComponent(providerName)}`,
-    {
-      method: "DELETE",
+  await unwrapGeneratedResponse(
+    generatedApiClient.DELETE("/admin/identity-providers/{provider_name}", {
+      params: { path: { provider_name: providerName } },
       credentials: "include",
       headers: {
         Accept: "application/json",
         ...withCsrfHeaders({}),
       },
-    },
+    }),
+    "Identity provider delete failed",
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `Identity provider delete failed with status ${response.status}`,
-    );
-  }
 }
 
 export async function fetchAdminZoneGrants(
   username: string,
 ): Promise<ZoneGrantListResponse> {
-  const response = await fetch(
-    `${apiBaseUrl}/admin/grants/${encodeURIComponent(username)}`,
-    {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/admin/grants/{username}", {
+      params: { path: { username } },
       credentials: "include",
       headers: {
         Accept: "application/json",
       },
-    },
+    }),
+    "Zone grant listing failed",
+    zoneGrantListResponseSchema,
   );
-
-  if (!response.ok) {
-    throw new Error(`Zone grant listing failed with status ${response.status}`);
-  }
-
-  return zoneGrantListResponseSchema.parse(await response.json());
 }
 
 export async function assignAdminZoneGrant(input: {
@@ -716,75 +822,62 @@ export async function assignAdminZoneGrant(input: {
   actions: string[];
 }) {
   const payload = zoneGrantSchema.parse(input);
-  const response = await fetch(`${apiBaseUrl}/admin/grants/zones`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...withCsrfHeaders({}),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Zone grant save failed with status ${response.status}`);
-  }
-
-  return zoneGrantSchema.parse(await response.json());
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/admin/grants/zones", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: payload,
+    }),
+    "Zone grant save failed",
+    zoneGrantSchema,
+  );
 }
 
 export async function fetchZones(): Promise<ZoneListResponse> {
-  const response = await fetch(`${apiBaseUrl}/zones`, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Zone listing failed with status ${response.status}`);
-  }
-
-  return zoneListResponseSchema.parse(await response.json());
-}
-
-export async function fetchZone(zoneName: string) {
-  const response = await fetch(
-    `${apiBaseUrl}/zones/${encodeURIComponent(zoneName)}`,
-    {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/zones", {
       credentials: "include",
       headers: {
         Accept: "application/json",
       },
-    },
+    }),
+    "Zone listing failed",
+    zoneListResponseSchema,
   );
+}
 
-  if (!response.ok) {
-    throw new Error(`Zone detail failed with status ${response.status}`);
-  }
-
-  return zoneSchema.parse(await response.json());
+export async function fetchZone(zoneName: string) {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/zones/{zone_name}", {
+      params: { path: { zone_name: zoneName } },
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Zone detail failed",
+    zoneSchema,
+  );
 }
 
 export async function fetchZoneRecords(
   zoneName: string,
 ): Promise<RecordListResponse> {
-  const response = await fetch(
-    `${apiBaseUrl}/zones/${encodeURIComponent(zoneName)}/records`,
-    {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/zones/{zone_name}/records", {
+      params: { path: { zone_name: zoneName } },
       credentials: "include",
       headers: {
         Accept: "application/json",
       },
-    },
+    }),
+    "Record listing failed",
+    recordListResponseSchema,
   );
-
-  if (!response.ok) {
-    throw new Error(`Record listing failed with status ${response.status}`);
-  }
-
-  return recordListResponseSchema.parse(await response.json());
 }
 
 export async function createZoneRecord(input: {
@@ -795,25 +888,20 @@ export async function createZoneRecord(input: {
   values: string[];
 }) {
   const payload = recordDraftSchema.parse(input);
-  const response = await fetch(
-    `${apiBaseUrl}/zones/${encodeURIComponent(payload.zoneName)}/records`,
-    {
-      method: "POST",
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/zones/{zone_name}/records", {
+      params: { path: { zone_name: payload.zoneName } },
       credentials: "include",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
         ...withCsrfHeaders({}),
       },
-      body: JSON.stringify(payload),
-    },
+      body: payload,
+    }),
+    "Record create failed",
+    recordSetSchema,
   );
-
-  if (!response.ok) {
-    throw new Error(`Record create failed with status ${response.status}`);
-  }
-
-  return recordSetSchema.parse(await response.json());
 }
 
 export async function updateZoneRecord(input: {
@@ -829,25 +917,20 @@ export async function updateZoneRecord(input: {
       expectedVersion: z.string().min(1),
     })
     .parse(input);
-  const response = await fetch(
-    `${apiBaseUrl}/zones/${encodeURIComponent(payload.zoneName)}/records`,
-    {
-      method: "PUT",
+  return unwrapGeneratedResponse(
+    generatedApiClient.PUT("/zones/{zone_name}/records", {
+      params: { path: { zone_name: payload.zoneName } },
       credentials: "include",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
         ...withCsrfHeaders({}),
       },
-      body: JSON.stringify(payload),
-    },
+      body: payload,
+    }),
+    "Record update failed",
+    recordSetSchema,
   );
-
-  if (!response.ok) {
-    throw new Error(`Record update failed with status ${response.status}`);
-  }
-
-  return recordSetSchema.parse(await response.json());
 }
 
 export async function deleteZoneRecord(input: {
@@ -864,21 +947,95 @@ export async function deleteZoneRecord(input: {
       expectedVersion: z.string().min(1),
     })
     .parse(input);
-  const response = await fetch(
-    `${apiBaseUrl}/zones/${encodeURIComponent(payload.zoneName)}/records`,
-    {
-      method: "DELETE",
+  await unwrapGeneratedResponse(
+    generatedApiClient.DELETE("/zones/{zone_name}/records", {
+      params: { path: { zone_name: payload.zoneName } },
       credentials: "include",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
         ...withCsrfHeaders({}),
       },
-      body: JSON.stringify(payload),
-    },
+      body: payload,
+    }),
+    "Record delete failed",
   );
+}
 
-  if (!response.ok) {
-    throw new Error(`Record delete failed with status ${response.status}`);
-  }
+export async function applyBulkZoneChanges(input: {
+  zoneName: string;
+  items: BulkChangeItem[];
+}): Promise<BulkChangeResponse> {
+  const payload = z
+    .object({
+      zoneName: z.string().min(1),
+      items: z.array(bulkChangeItemSchema).min(1),
+    })
+    .parse(input);
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/zones/{zone_name}/changes/bulk", {
+      params: { path: { zone_name: payload.zoneName } },
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: payload,
+    }),
+    "Bulk change apply failed",
+    bulkChangeResponseSchema,
+  );
+}
+
+export async function fetchAdminServiceAccounts(): Promise<ServiceAccountListResponse> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/admin/service-accounts", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Service account listing failed",
+    serviceAccountListResponseSchema,
+  );
+}
+
+export async function createAdminServiceAccount(input: {
+  username: string;
+  role: "admin" | "editor" | "viewer";
+}): Promise<ServiceAccount> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/admin/service-accounts", {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: input,
+    }),
+    "Service account creation failed",
+    serviceAccountSchema,
+  );
+}
+
+export async function createAdminServiceAccountToken(input: {
+  username: string;
+  name: string;
+}): Promise<ApiTokenCreateResponse> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/admin/service-accounts/{username}/tokens", {
+      params: { path: { username: input.username } },
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: { name: input.name },
+    }),
+    "Service account token creation failed",
+    apiTokenCreateResponseSchema,
+  );
 }

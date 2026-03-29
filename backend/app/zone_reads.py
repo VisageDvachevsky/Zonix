@@ -72,6 +72,13 @@ class ZoneReadService:
         adapter = self._get_adapter_for_name(zone.backend_name)
         return adapter.list_records(zone.name)
 
+    def list_backend_zones(self, backend_name: str) -> tuple[Zone, ...]:
+        adapter = self._get_adapter_for_name(backend_name)
+        return adapter.list_zones()
+
+    def configured_backend_names(self) -> tuple[str, ...]:
+        return tuple(sorted(self.adapters))
+
     def _find_accessible_zone(self, user: User, zone_name: str) -> Zone | None:
         granted_zone_names = self._granted_zone_names(user)
 

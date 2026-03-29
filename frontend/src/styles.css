@@ -104,7 +104,8 @@ textarea {
 .empty-state,
 .records-table,
 .rail-section,
-.auth-summary-grid {
+.auth-summary-grid,
+.stack-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -264,11 +265,21 @@ textarea {
 .inline-actions,
 .form-toolbar,
 .action-group,
-.admin-tabs {
+.admin-tabs,
+.stack-layout {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.stack-layout {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.stack-layout-compact {
+  gap: 16px;
 }
 
 .topbar-context {
@@ -469,6 +480,11 @@ textarea {
   gap: 4px;
 }
 
+.record-select-line {
+  align-items: center;
+  color: var(--text);
+}
+
 .record-name-stack span {
   color: var(--text-dim);
   font-size: 0.82rem;
@@ -630,6 +646,12 @@ textarea {
   padding: 18px;
 }
 
+.stack-card {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
 .auth-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -724,6 +746,15 @@ textarea {
   gap: 6px;
 }
 
+.resource-copy.checkbox-line {
+  justify-content: flex-start;
+}
+
+.resource-copy.checkbox-line > span {
+  display: grid;
+  gap: 6px;
+}
+
 .resource-copy span,
 .backend-config-capabilities,
 .backend-config-type {
@@ -772,6 +803,14 @@ textarea {
   border-color: rgba(227, 93, 106, 0.28);
   background: var(--danger-soft);
   color: #ffd0d5;
+}
+
+.token-preview {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: #d8e6ff;
 }
 
 .empty-state {

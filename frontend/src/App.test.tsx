@@ -1,15 +1,23 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ZodError } from "zod";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z, ZodError } from "zod";
 
 import { App } from "./App";
-import { recordDraftSchema, startOidcLogin } from "./api";
+import {
+  applyBulkZoneChanges,
+  createAdminServiceAccount,
+  createAdminServiceAccountToken,
+  discoverAdminBackendZones,
+  importAdminBackendZones,
+  startOidcLogin,
+} from "./api";
 
-vi.mock("./api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./api")>();
-
+vi.mock("./api", () => {
   return {
-    ...actual,
+    recordTypeSchema: {
+      options: ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "NS", "PTR", "CAA", "SOA"],
+    },
     fetchHealth: vi.fn(async () => ({
       status: "ok",
       app: "Zonix API",
@@ -136,11 +144,64 @@ vi.mock("./api", async (importOriginal) => {
         },
       ],
     })),
+    fetchAdminServiceAccounts: vi.fn(async () => ({
+      items: [
+        {
+          username: "svc-robot",
+          role: "editor",
+          authSource: "service-account",
+          isActive: true,
+        },
+      ],
+    })),
     createAdminBackend: vi.fn(),
     createAdminIdentityProvider: vi.fn(),
+    createAdminServiceAccount: vi.fn(async (input) => ({
+      username: input.username,
+      role: input.role,
+      authSource: "service-account",
+      isActive: true,
+    })),
+    createAdminServiceAccountToken: vi.fn(async ({ username, name }) => ({
+      username,
+      tokenName: name,
+      token: "zonix_tok_test_token",
+    })),
     createZoneRecord: vi.fn(),
     updateZoneRecord: vi.fn(),
     deleteZoneRecord: vi.fn(),
+    applyBulkZoneChanges: vi.fn(async ({ zoneName, items }) => ({
+      zoneName,
+      applied: true,
+      hasConflicts: false,
+      items: items.map((item: { operation: string; name: string; expectedVersion?: string }) => ({
+        actor: "admin",
+        zoneName,
+        backendName: "powerdns-sandbox",
+        operation: item.operation,
+        before: null,
+        after: null,
+        expectedVersion: item.expectedVersion ?? null,
+        currentVersion: null,
+        hasConflict: false,
+        conflictReason: null,
+        summary: `${item.operation} ${item.name}`,
+      })),
+    })),
+    discoverAdminBackendZones: vi.fn(async (backendName) => ({
+      backendName,
+      items: [
+        { name: "example.com", backendName, managed: true },
+        { name: "new.example", backendName, managed: false },
+      ],
+    })),
+    importAdminBackendZones: vi.fn(async ({ backendName, zoneNames }) => ({
+      backendName,
+      importedZones: (zoneNames ?? []).map((name: string) => ({
+        name,
+        backendName,
+      })),
+    })),
     assignAdminZoneGrant: vi.fn(),
     syncAdminBackendZones: vi.fn(),
     deleteAdminBackend: vi.fn(),
@@ -148,6 +209,39 @@ vi.mock("./api", async (importOriginal) => {
     updateAdminUserRole: vi.fn(),
   };
 });
+
+const frontendRecordDraftSchema = z
+  .object({
+    zoneName: z.string().min(1),
+    name: z.string().min(1),
+    recordType: z.preprocess((value) => {
+      if (typeof value !== "string") {
+        return value;
+      }
+      return value.toUpperCase();
+    }, z.enum(["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "NS", "PTR", "CAA", "SOA"])),
+    ttl: z.number().int().positive(),
+    values: z.array(z.string().min(1)),
+  })
+  .superRefine((record, ctx) => {
+    if (record.recordType !== "A") {
+      return;
+    }
+
+    for (const value of record.values) {
+      const octets = value.split(".");
+      const valid =
+        octets.length === 4 &&
+        octets.every((octet) => /^\d+$/.test(octet) && Number(octet) >= 0 && Number(octet) <= 255);
+      if (!valid) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Invalid A record value: ${value}`,
+          path: ["values"],
+        });
+      }
+    }
+  });
 
 describe("App", () => {
   const originalLocation = window.location;
@@ -161,6 +255,7 @@ describe("App", () => {
         origin: "http://localhost:5173",
       },
     });
+    window.confirm = vi.fn(() => true);
   });
 
   afterAll(() => {
@@ -247,10 +342,16 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: /backend inventory/i }),
     ).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: /discover and import zones/i }),
+    ).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: /^auth$/i }));
     expect(
       await screen.findByRole("heading", { name: /auth hardening/i }),
+    ).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: /service accounts and tokens/i }),
     ).toBeVisible();
   });
 
@@ -288,9 +389,131 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^save$/i })).toBeVisible();
   });
 
+  it("applies bulk delete from the records workspace", async () => {
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/username/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByRole("heading", { name: /zone inventory/i });
+    fireEvent.click(await screen.findByLabelText(/select www a/i));
+    fireEvent.click(screen.getByRole("button", { name: /bulk delete \(1\)/i }));
+
+    await waitFor(() => {
+      expect(applyBulkZoneChanges).toHaveBeenCalledWith(
+        {
+          zoneName: "example.com",
+          items: [
+            {
+              operation: "delete",
+              name: "www",
+              recordType: "A",
+              expectedVersion: "www-version",
+            },
+          ],
+        },
+        expect.anything(),
+      );
+    });
+  });
+
+  it("discovers and imports zones from the operations tab", async () => {
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/username/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /^operations$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /discover zones/i }));
+
+    expect(await screen.findByText("new.example")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /import selected \(1\)/i }));
+
+    await waitFor(() => {
+      expect(discoverAdminBackendZones).toHaveBeenCalled();
+      expect(importAdminBackendZones).toHaveBeenCalledWith(
+        {
+          backendName: "bind-lab",
+          zoneNames: ["new.example"],
+        },
+        expect.anything(),
+      );
+    });
+  });
+
+  it("creates a service account and issues an api token from the auth tab", async () => {
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/username/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /^auth$/i }));
+
+    fireEvent.change(await screen.findByLabelText(/service account username/i), {
+      target: { value: "svc-ci" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create service account/i }));
+
+    fireEvent.change(await screen.findByLabelText(/service account token name/i), {
+      target: { value: "ci-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /issue api token/i }));
+
+    await waitFor(() => {
+      expect(createAdminServiceAccount).toHaveBeenCalledWith(
+        {
+          username: "svc-ci",
+          role: "editor",
+        },
+        expect.anything(),
+      );
+      expect(createAdminServiceAccountToken).toHaveBeenCalledWith(
+        {
+          username: "svc-robot",
+          name: "ci-token",
+        },
+        expect.anything(),
+      );
+    });
+    expect(await screen.findByText(/zonix_tok_test_token/i)).toBeVisible();
+  });
+
   it("validates typed record sets with the shared frontend schema", () => {
     expect(
-      recordDraftSchema.parse({
+      frontendRecordDraftSchema.parse({
         zoneName: "example.com",
         name: "www",
         recordType: "a",
@@ -300,7 +523,7 @@ describe("App", () => {
     ).toBe("A");
 
     expect(() =>
-      recordDraftSchema.parse({
+      frontendRecordDraftSchema.parse({
         zoneName: "example.com",
         name: "www",
         recordType: "A",

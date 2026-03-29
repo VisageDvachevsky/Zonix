@@ -7,15 +7,20 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  applyBulkZoneChanges,
   assignAdminZoneGrant,
   createAdminBackend,
   createAdminIdentityProvider,
+  createAdminServiceAccount,
+  createAdminServiceAccountToken,
   createZoneRecord,
   deleteAdminBackend,
   deleteAdminIdentityProvider,
   deleteZoneRecord,
+  discoverAdminBackendZones,
   fetchAdminBackends,
   fetchAdminIdentityProviders,
+  fetchAdminServiceAccounts,
   fetchAdminUsers,
   fetchAdminZoneGrants,
   fetchAuthSettings,
@@ -25,6 +30,7 @@ import {
   fetchSession,
   fetchZoneRecords,
   fetchZones,
+  importAdminBackendZones,
   login,
   logout,
   recordTypeSchema,
@@ -34,6 +40,7 @@ import {
   updateZoneRecord,
   type Backend,
   type AdminUser,
+  type ApiTokenCreateResponse,
   type OidcProvider,
   type RecordSet,
   type RecordType,
@@ -317,7 +324,9 @@ type RecordDisplayRowProps = {
   onDelete: () => void;
   onDuplicate: () => void;
   onEdit: () => void;
+  onToggleSelection: () => void;
   record: RecordSet;
+  selected: boolean;
 };
 
 function RecordDisplayRow(props: RecordDisplayRowProps) {
@@ -328,7 +337,16 @@ function RecordDisplayRow(props: RecordDisplayRowProps) {
       </div>
       <div className="records-cell records-cell-name">
         <div className="record-name-stack">
-          <strong>{props.record.name}</strong>
+          <label className="checkbox-line record-select-line">
+            <input
+              aria-label={`Select ${props.record.name} ${props.record.recordType}`}
+              checked={props.selected}
+              disabled={!props.canWrite}
+              onChange={props.onToggleSelection}
+              type="checkbox"
+            />
+            <strong>{props.record.name}</strong>
+          </label>
           <span>{formatValueCount(props.record.values.length)}</span>
         </div>
       </div>
@@ -411,6 +429,21 @@ export function App() {
   );
   const [providerFormError, setProviderFormError] = useState<string | null>(null);
   const [grantActions, setGrantActions] = useState<string[]>(["read"]);
+  const [selectedRecordKeys, setSelectedRecordKeys] = useState<string[]>([]);
+  const [discoveryBackendName, setDiscoveryBackendName] = useState("");
+  const [discoveredZoneNames, setDiscoveredZoneNames] = useState<string[]>([]);
+  const [lastDiscoveredBackendName, setLastDiscoveredBackendName] = useState<
+    string | null
+  >(null);
+  const [serviceAccountUsername, setServiceAccountUsername] = useState("");
+  const [serviceAccountRole, setServiceAccountRole] = useState<
+    "admin" | "editor" | "viewer"
+  >("editor");
+  const [tokenTargetUsername, setTokenTargetUsername] = useState("");
+  const [tokenName, setTokenName] = useState("automation");
+  const [issuedToken, setIssuedToken] = useState<ApiTokenCreateResponse | null>(
+    null,
+  );
 
   const healthQuery = useQuery({
     queryKey: ["health"],
@@ -481,6 +514,12 @@ export function App() {
     enabled: isAdmin && selectedGrantUsername !== null,
     retry: false,
   });
+  const adminServiceAccountsQuery = useQuery({
+    queryKey: ["admin-service-accounts"],
+    queryFn: fetchAdminServiceAccounts,
+    enabled: isAdmin,
+    retry: false,
+  });
 
   const loginMutation = useMutation({
     mutationFn: login,
@@ -491,6 +530,7 @@ export function App() {
         queryClient.invalidateQueries({ queryKey: ["zones"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-backends"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-service-accounts"] }),
         queryClient.invalidateQueries({
           queryKey: ["admin-identity-providers"],
         }),
@@ -508,6 +548,7 @@ export function App() {
         "zone-records",
         "admin-users",
         "admin-backends",
+        "admin-service-accounts",
         "admin-identity-providers",
         "admin-zone-grants",
       ]) {
@@ -557,6 +598,15 @@ export function App() {
   });
   const deleteRecordMutation = useMutation({
     mutationFn: deleteZoneRecord,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["zone-records", selectedZoneName] }),
+        queryClient.invalidateQueries({ queryKey: ["zones"] }),
+      ]);
+    },
+  });
+  const bulkChangeMutation = useMutation({
+    mutationFn: applyBulkZoneChanges,
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["zone-records", selectedZoneName] }),
@@ -627,6 +677,38 @@ export function App() {
       }
 
       await Promise.all(invalidations);
+    },
+  });
+  const discoverZonesMutation = useMutation({
+    mutationFn: discoverAdminBackendZones,
+  });
+  const importZonesMutation = useMutation({
+    mutationFn: importAdminBackendZones,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["zones"] }),
+        queryClient.invalidateQueries({ queryKey: ["backends"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-backends"] }),
+      ]);
+    },
+  });
+  const createServiceAccountMutation = useMutation({
+    mutationFn: createAdminServiceAccount,
+    onSuccess: async (serviceAccount) => {
+      setServiceAccountUsername("");
+      setServiceAccountRole("editor");
+      setWorkspaceNotice(`Service account created for ${serviceAccount.username}.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-service-accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+      ]);
+    },
+  });
+  const createServiceAccountTokenMutation = useMutation({
+    mutationFn: createAdminServiceAccountToken,
+    onSuccess: (token) => {
+      setIssuedToken(token);
+      setWorkspaceNotice(`Token issued for ${token.username}.`);
     },
   });
 
@@ -708,6 +790,14 @@ export function App() {
   const isRoleChangeBlocked =
     isEditingCurrentUser && selectedAdminUser?.role !== selectedUserRole;
   const isGrantChangeBlocked = selectedAdminUser?.role === "admin";
+  const selectedRecords = records.filter((record) =>
+    selectedRecordKeys.includes(getRecordKey(record)),
+  );
+  const serviceAccounts = adminServiceAccountsQuery.data?.items ?? [];
+  const lastDiscoveredZones = discoverZonesMutation.data?.items ?? [];
+  const selectedDiscoveredZones = lastDiscoveredZones.filter((zone) =>
+    discoveredZoneNames.includes(zone.name),
+  );
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -754,12 +844,52 @@ export function App() {
   useEffect(() => {
     setRecordEditor(null);
     setRowFeedback(null);
+    setSelectedRecordKeys([]);
   }, [selectedZoneName]);
 
   useEffect(() => {
     assignGrantMutation.reset();
     updateUserRoleMutation.reset();
-  }, [assignGrantMutation, selectedGrantUsername, selectedZoneName, updateUserRoleMutation]);
+    // Mutation objects are not stable across renders; only reset when the grant context changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGrantUsername, selectedZoneName]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setDiscoveryBackendName("");
+      setLastDiscoveredBackendName(null);
+      setDiscoveredZoneNames([]);
+      return;
+    }
+
+    const backendNames = visibleAdminBackends.map((backend) => backend.name);
+    if (selectedBackend && backendNames.includes(selectedBackend.name)) {
+      setDiscoveryBackendName((current) =>
+        current.length > 0 ? current : selectedBackend.name,
+      );
+      return;
+    }
+
+    if (
+      discoveryBackendName.length === 0 ||
+      !backendNames.includes(discoveryBackendName)
+    ) {
+      setDiscoveryBackendName(backendNames[0] ?? "");
+    }
+  }, [discoveryBackendName, isAdmin, selectedBackend, visibleAdminBackends]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setTokenTargetUsername("");
+      setIssuedToken(null);
+      return;
+    }
+
+    const usernames = serviceAccounts.map((account) => account.username);
+    if (tokenTargetUsername.length === 0 || !usernames.includes(tokenTargetUsername)) {
+      setTokenTargetUsername(usernames[0] ?? "");
+    }
+  }, [isAdmin, serviceAccounts, tokenTargetUsername]);
 
   function resetBackendForm() {
     setEditingBackendName(null);
@@ -846,6 +976,14 @@ export function App() {
       username: selectedGrantUsername,
       role: selectedUserRole,
     });
+  }
+
+  function toggleRecordSelection(recordKey: string) {
+    setSelectedRecordKeys((current) =>
+      current.includes(recordKey)
+        ? current.filter((item) => item !== recordKey)
+        : [...current, recordKey],
+    );
   }
 
   function openCreateRecord(prefill?: RecordSet) {
@@ -960,6 +1098,89 @@ export function App() {
     } catch (error) {
       setWorkspaceNotice(getFeedbackText(error, "Backend sync failed."));
     }
+  }
+
+  async function handleBulkDeleteSelected() {
+    if (!selectedZoneName || selectedRecords.length === 0) return;
+    if (
+      !window.confirm(
+        `Delete ${selectedRecords.length} selected RRset(s) from ${selectedZoneName}?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const result = await bulkChangeMutation.mutateAsync({
+        zoneName: selectedZoneName,
+        items: selectedRecords.map((record) => ({
+          operation: "delete",
+          name: record.name,
+          recordType: record.recordType,
+          expectedVersion: record.version,
+        })),
+      });
+      setSelectedRecordKeys([]);
+      setWorkspaceNotice(
+        result.hasConflicts
+          ? "Bulk delete completed with conflicts."
+          : `Deleted ${result.items.length} RRset(s).`,
+      );
+    } catch (error) {
+      setWorkspaceNotice(getFeedbackText(error, "Bulk delete failed."));
+    }
+  }
+
+  async function handleDiscoverZones() {
+    if (!discoveryBackendName) return;
+
+    try {
+      const discovered = await discoverZonesMutation.mutateAsync(discoveryBackendName);
+      setLastDiscoveredBackendName(discovered.backendName);
+      setDiscoveredZoneNames(
+        discovered.items.filter((zone) => !zone.managed).map((zone) => zone.name),
+      );
+      setWorkspaceNotice(`Discovered ${discovered.items.length} zone(s).`);
+    } catch (error) {
+      setWorkspaceNotice(getFeedbackText(error, "Backend discovery failed."));
+    }
+  }
+
+  async function handleImportDiscoveredZones() {
+    if (!discoveryBackendName || selectedDiscoveredZones.length === 0) return;
+
+    try {
+      const imported = await importZonesMutation.mutateAsync({
+        backendName: discoveryBackendName,
+        zoneNames: selectedDiscoveredZones.map((zone) => zone.name),
+      });
+      setDiscoveredZoneNames([]);
+      setWorkspaceNotice(
+        `Imported ${imported.importedZones.length} zone(s) from ${imported.backendName}.`,
+      );
+      if (lastDiscoveredBackendName === discoveryBackendName) {
+        await handleDiscoverZones();
+      }
+    } catch (error) {
+      setWorkspaceNotice(getFeedbackText(error, "Backend import failed."));
+    }
+  }
+
+  function handleServiceAccountSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    createServiceAccountMutation.mutate({
+      username: serviceAccountUsername,
+      role: serviceAccountRole,
+    });
+  }
+
+  function handleTokenIssueSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!tokenTargetUsername) return;
+    createServiceAccountTokenMutation.mutate({
+      username: tokenTargetUsername,
+      name: tokenName,
+    });
   }
 
   function handleSortChange(nextSortKey: SortKey) {
@@ -1097,12 +1318,108 @@ export function App() {
           </p>
         </div>
         {isAdmin ? (
-          <AdminConsole
-            {...sharedAdminConsoleProps}
-            activeSection="backends"
-            activeSectionDescription={adminSectionMeta.backends.description}
-            activeSectionLabel={adminSectionMeta.backends.label}
-          />
+          <div className="stack-layout">
+            <AdminConsole
+              {...sharedAdminConsoleProps}
+              activeSection="backends"
+              activeSectionDescription={adminSectionMeta.backends.description}
+              activeSectionLabel={adminSectionMeta.backends.label}
+            />
+            <section className="panel stack-card">
+              <div className="panel-heading">
+                <div>
+                  <p className="panel-label">Discovery</p>
+                  <h2>Discover and import zones</h2>
+                </div>
+                <span className="panel-meta">
+                  {lastDiscoveredZones.length} discovered
+                </span>
+              </div>
+              <form
+                className="stacked-form stacked-form-split"
+                onSubmit={(event) => event.preventDefault()}
+              >
+                <label>
+                  <span>Backend</span>
+                  <select
+                    aria-label="Discovery backend"
+                    onChange={(event) => setDiscoveryBackendName(event.target.value)}
+                    value={discoveryBackendName}
+                  >
+                    {visibleAdminBackends.map((backend) => (
+                      <option key={backend.name} value={backend.name}>
+                        {backend.name} · {backend.backendType}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="inline-actions">
+                  <button
+                    className="primary-button"
+                    disabled={
+                      discoveryBackendName.length === 0 ||
+                      discoverZonesMutation.isPending
+                    }
+                    onClick={() => void handleDiscoverZones()}
+                    type="button"
+                  >
+                    {discoverZonesMutation.isPending ? "Discovering..." : "Discover zones"}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={
+                      selectedDiscoveredZones.length === 0 ||
+                      importZonesMutation.isPending
+                    }
+                    onClick={() => void handleImportDiscoveredZones()}
+                    type="button"
+                  >
+                    {importZonesMutation.isPending
+                      ? "Importing..."
+                      : `Import selected (${selectedDiscoveredZones.length})`}
+                  </button>
+                </div>
+                {discoverZonesMutation.isError ? (
+                  <p className="status-error">Zone discovery could not be completed.</p>
+                ) : null}
+                {importZonesMutation.isError ? (
+                  <p className="status-error">Zone import could not be completed.</p>
+                ) : null}
+              </form>
+              {lastDiscoveredBackendName === discoveryBackendName &&
+              lastDiscoveredZones.length > 0 ? (
+                <ul className="resource-list">
+                  {lastDiscoveredZones.map((zone) => (
+                    <li key={zone.name} className="resource-item-action">
+                      <label className="resource-copy checkbox-line">
+                        <input
+                          checked={discoveredZoneNames.includes(zone.name)}
+                          disabled={zone.managed}
+                          onChange={() =>
+                            setDiscoveredZoneNames((current) =>
+                              current.includes(zone.name)
+                                ? current.filter((item) => item !== zone.name)
+                                : [...current, zone.name],
+                            )
+                          }
+                          type="checkbox"
+                        />
+                        <span>
+                          <strong>{zone.name}</strong>
+                          <span>{zone.managed ? "already managed" : "ready to import"}</span>
+                        </span>
+                      </label>
+                      <span className="backend-config-type">{zone.backendName}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="placeholder-copy">
+                  Run discovery against a backend to review importable zones.
+                </p>
+              )}
+            </section>
+          </div>
         ) : (
           <div className="read-only-list">
             <div className="read-only-list-header">
@@ -1203,12 +1520,136 @@ export function App() {
           </div>
         </div>
         {isAdmin ? (
-          <AdminConsole
-            {...sharedAdminConsoleProps}
-            activeSection="identity"
-            activeSectionDescription={adminSectionMeta.identity.description}
-            activeSectionLabel={adminSectionMeta.identity.label}
-          />
+          <div className="stack-layout">
+            <AdminConsole
+              {...sharedAdminConsoleProps}
+              activeSection="identity"
+              activeSectionDescription={adminSectionMeta.identity.description}
+              activeSectionLabel={adminSectionMeta.identity.label}
+            />
+            <section className="panel stack-card">
+              <div className="panel-heading">
+                <div>
+                  <p className="panel-label">Automation</p>
+                  <h2>Service accounts and tokens</h2>
+                </div>
+                <span className="panel-meta">{serviceAccounts.length} accounts</span>
+              </div>
+              <div className="stack-layout stack-layout-compact">
+                <form className="stacked-form stacked-form-split" onSubmit={handleServiceAccountSubmit}>
+                  <label>
+                    <span>Service account username</span>
+                    <input
+                      aria-label="Service account username"
+                      onChange={(event) => setServiceAccountUsername(event.target.value)}
+                      value={serviceAccountUsername}
+                    />
+                  </label>
+                  <label>
+                    <span>Role</span>
+                    <select
+                      aria-label="Service account role"
+                      onChange={(event) =>
+                        setServiceAccountRole(
+                          event.target.value as "admin" | "editor" | "viewer",
+                        )
+                      }
+                      value={serviceAccountRole}
+                    >
+                      <option value="admin">admin</option>
+                      <option value="editor">editor</option>
+                      <option value="viewer">viewer</option>
+                    </select>
+                  </label>
+                  <button
+                    className="primary-button"
+                    disabled={
+                      serviceAccountUsername.trim().length === 0 ||
+                      createServiceAccountMutation.isPending
+                    }
+                    type="submit"
+                  >
+                    {createServiceAccountMutation.isPending
+                      ? "Creating..."
+                      : "Create service account"}
+                  </button>
+                  {createServiceAccountMutation.isError ? (
+                    <p className="status-error">
+                      Service account could not be created.
+                    </p>
+                  ) : null}
+                </form>
+                <form className="stacked-form stacked-form-split" onSubmit={handleTokenIssueSubmit}>
+                  <label>
+                    <span>Target service account</span>
+                    <select
+                      aria-label="Token target service account"
+                      onChange={(event) => {
+                        setTokenTargetUsername(event.target.value);
+                        setIssuedToken(null);
+                      }}
+                      value={tokenTargetUsername}
+                    >
+                      {serviceAccounts.map((account) => (
+                        <option key={account.username} value={account.username}>
+                          {account.username} · {account.role}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Token name</span>
+                    <input
+                      aria-label="Service account token name"
+                      onChange={(event) => setTokenName(event.target.value)}
+                      value={tokenName}
+                    />
+                  </label>
+                  <button
+                    className="secondary-button"
+                    disabled={
+                      tokenTargetUsername.length === 0 ||
+                      tokenName.trim().length === 0 ||
+                      createServiceAccountTokenMutation.isPending
+                    }
+                    type="submit"
+                  >
+                    {createServiceAccountTokenMutation.isPending
+                      ? "Issuing..."
+                      : "Issue API token"}
+                  </button>
+                  {createServiceAccountTokenMutation.isError ? (
+                    <p className="status-error">API token could not be issued.</p>
+                  ) : null}
+                </form>
+                {issuedToken ? (
+                  <div className="status-callout">
+                    <strong>Issued token</strong>
+                    <p>{issuedToken.username}</p>
+                    <code className="token-preview">{issuedToken.token}</code>
+                  </div>
+                ) : null}
+                <ul className="resource-list">
+                  {serviceAccounts.map((account) => (
+                    <li key={account.username} className="resource-item-action">
+                      <div className="resource-copy">
+                        <strong>{account.username}</strong>
+                        <span>
+                          {account.role} · {account.authSource} ·{" "}
+                          {account.isActive ? "active" : "inactive"}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {!adminServiceAccountsQuery.isLoading && serviceAccounts.length === 0 ? (
+                  <p className="placeholder-copy">
+                    No service accounts have been created yet.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          </div>
         ) : (
           <div className="empty-state">
             <strong>Read-only auth posture</strong>
@@ -1520,6 +1961,7 @@ export function App() {
                       {sortedRecords.length} shown
                     </span>
                     <span>{records.length} total</span>
+                    <span>{selectedRecordKeys.length} selected</span>
                     <span>
                       sort: {sortKey} {sortDirection}
                     </span>
@@ -1534,6 +1976,21 @@ export function App() {
                     ) : (
                       <span>edit and duplicate stay on-row for fast changes</span>
                     )}
+                    {canWriteRecords ? (
+                      <button
+                        className="secondary-button secondary-button-danger"
+                        disabled={
+                          selectedRecordKeys.length === 0 ||
+                          bulkChangeMutation.isPending
+                        }
+                        onClick={() => void handleBulkDeleteSelected()}
+                        type="button"
+                      >
+                        {bulkChangeMutation.isPending
+                          ? "Deleting selected..."
+                          : `Bulk delete (${selectedRecordKeys.length})`}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1617,7 +2074,9 @@ export function App() {
                         onDelete={() => handleDeleteRecord(record)}
                         onDuplicate={() => openCreateRecord(record)}
                         onEdit={() => openUpdateRecord(record)}
+                        onToggleSelection={() => toggleRecordSelection(recordKey)}
                         record={record}
+                        selected={selectedRecordKeys.includes(recordKey)}
                       />
                     );
                   })}

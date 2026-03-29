@@ -18,6 +18,8 @@
     "bootstrap:admin": "cd backend && python -m app.bootstrap",
     "bootstrap:oidc": "cd backend && python -m app.bootstrap",
     "migrate": "cd backend && python -m app.migrations",
+    "openapi:export": "python backend/scripts/export_openapi.py frontend/openapi.json",
+    "openapi:generate": "npm run openapi:export && npm --prefix frontend run generate:api",
     "compose:up": "docker compose -f deploy/docker-compose.yml up --build",
     "compose:up:bind-lab": "docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.bind-lab.yml up --build",
     "compose:down": "docker compose -f deploy/docker-compose.yml down -v",

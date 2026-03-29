@@ -55,7 +55,7 @@ class PowerDNSLiveIntegrationTests(unittest.TestCase):
                     name=record_name,
                     record_type="TXT",
                     ttl=300,
-                    values=('"created"',),
+                    values=("created",),
                 )
             )
         except UpstreamReadError as error:
@@ -64,6 +64,7 @@ class PowerDNSLiveIntegrationTests(unittest.TestCase):
             raise
         after_create = self.adapter.list_records(self.zone_name)
         self.assertEqual(created.record_type, "TXT")
+        self.assertEqual(created.values, ('"created"',))
         self.assertIn(
             (record_name, "TXT", ('"created"',)),
             [(record.name, record.record_type, record.values) for record in after_create],
@@ -75,11 +76,12 @@ class PowerDNSLiveIntegrationTests(unittest.TestCase):
                 name=record_name,
                 record_type="TXT",
                 ttl=600,
-                values=('"updated"',),
+                values=("updated",),
             )
         )
         after_update = self.adapter.list_records(self.zone_name)
         self.assertEqual(updated.ttl, 600)
+        self.assertEqual(updated.values, ('"updated"',))
         self.assertIn(
             (record_name, "TXT", ('"updated"',)),
             [(record.name, record.record_type, record.values) for record in after_update],

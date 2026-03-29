@@ -234,11 +234,11 @@ class PowerDNSReadAdapter:
 
     def create_record_set(self, record_set: RecordSet) -> RecordSet:
         self._patch_rrset(record_set, changetype="REPLACE")
-        return record_set
+        return self._normalize_record_set(record_set)
 
     def update_record_set(self, record_set: RecordSet) -> RecordSet:
         self._patch_rrset(record_set, changetype="REPLACE")
-        return record_set
+        return self._normalize_record_set(record_set)
 
     def delete_record_set(self, zone_name: str, name: str, record_type: str) -> None:
         try:
@@ -335,7 +335,13 @@ class PowerDNSReadAdapter:
                             "ttl": record_set.ttl,
                             "changetype": changetype,
                             "records": [
-                                {"content": value, "disabled": False}
+                                {
+                                    "content": self._serialize_record_value(
+                                        record_set.record_type,
+                                        value,
+                                    ),
+                                    "disabled": False,
+                                }
                                 for value in record_set.values
                             ],
                         }
@@ -344,6 +350,30 @@ class PowerDNSReadAdapter:
             )
         except PowerDNSClientError as error:
             raise UpstreamReadError(self.backend_name, str(error)) from error
+
+    @classmethod
+    def _normalize_record_set(cls, record_set: RecordSet) -> RecordSet:
+        return record_set.model_copy(
+            update={
+                "values": tuple(
+                    cls._serialize_record_value(record_set.record_type, value)
+                    for value in record_set.values
+                )
+            }
+        )
+
+    @classmethod
+    def _serialize_record_value(cls, record_type: str, value: str) -> str:
+        if record_type.upper() != "TXT":
+            return value
+        return cls._serialize_txt_value(value)
+
+    @staticmethod
+    def _serialize_txt_value(value: str) -> str:
+        if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+            return value
+        escaped_value = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped_value}"'
 
     @staticmethod
     def _require_str(payload: Mapping[str, Any], key: str) -> str:

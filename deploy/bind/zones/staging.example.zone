@@ -1,0 +1,12 @@
+$TTL 300
+@   IN  SOA ns1.staging.example. hostmaster.staging.example. (
+        2026032901
+        3600
+        600
+        1209600
+        300
+)
+@       IN  NS      ns1.staging.example.
+ns1     IN  A       192.0.2.153
+app     IN  A       192.0.2.154
+txt     IN  TXT     "staging-bind"

@@ -331,6 +331,87 @@ class MockApiTests(unittest.TestCase):
         self.assertEqual(response.json()["conflictReason"], "record already exists")
         self.assertEqual(response.json()["before"]["name"], "www")
 
+    def test_bulk_apply_creates_multiple_records_with_one_request(self) -> None:
+        self.client.post("/auth/login", json={"username": "alice", "password": "editor"})
+
+        response = self.client.post(
+            "/zones/example.com/changes/bulk",
+            json={
+                "zoneName": "example.com",
+                "items": [
+                    {
+                        "operation": "create",
+                        "name": "api",
+                        "recordType": "TXT",
+                        "ttl": 300,
+                        "values": ['"created"'],
+                    },
+                    {
+                        "operation": "create",
+                        "name": "mail",
+                        "recordType": "TXT",
+                        "ttl": 300,
+                        "values": ['"bulk"'],
+                    },
+                ],
+            },
+            headers=self.csrf_headers(),
+        )
+        records_response = self.client.get("/zones/example.com/records")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["applied"], True)
+        self.assertEqual(response.json()["hasConflicts"], False)
+        self.assertEqual(len(response.json()["items"]), 2)
+        self.assertIn(
+            ("api", "TXT"),
+            [(item["name"], item["recordType"]) for item in records_response.json()["items"]],
+        )
+        self.assertIn(
+            ("mail", "TXT"),
+            [(item["name"], item["recordType"]) for item in records_response.json()["items"]],
+        )
+
+    def test_bulk_apply_returns_validation_conflicts_without_partial_writes(self) -> None:
+        self.client.post("/auth/login", json={"username": "alice", "password": "editor"})
+
+        response = self.client.post(
+            "/zones/example.com/changes/bulk",
+            json={
+                "zoneName": "example.com",
+                "items": [
+                    {
+                        "operation": "create",
+                        "name": "api",
+                        "recordType": "TXT",
+                        "ttl": 300,
+                        "values": ['"created"'],
+                    },
+                    {
+                        "operation": "update",
+                        "name": "api",
+                        "recordType": "TXT",
+                        "ttl": 600,
+                        "values": ['"updated"'],
+                    },
+                ],
+            },
+            headers=self.csrf_headers(),
+        )
+        records_response = self.client.get("/zones/example.com/records")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["applied"], False)
+        self.assertEqual(response.json()["hasConflicts"], True)
+        self.assertEqual(
+            response.json()["items"][1]["conflictReason"],
+            "duplicate record change in bulk set",
+        )
+        self.assertNotIn(
+            ("api", "TXT"),
+            [(item["name"], item["recordType"]) for item in records_response.json()["items"]],
+        )
+
     def test_zone_detail_hides_inaccessible_zone(self) -> None:
         self.client.post("/auth/login", json={"username": "alice", "password": "editor"})
 
@@ -887,6 +968,45 @@ class MockApiTests(unittest.TestCase):
         self.assertIn(
             "ephemeral.example",
             [zone["name"] for zone in sync_response.json()["syncedZones"]],
+        )
+        self.assertEqual(assign_response.status_code, 200)
+        self.assertEqual(
+            [zone["name"] for zone in zones_response.json()["items"]],
+            ["ephemeral.example", "lab.example"],
+        )
+
+    def test_admin_can_discover_and_import_backend_zones_before_granting_access(self) -> None:
+        self.powerdns_adapter.zones["ephemeral.example"] = Zone(
+            name="ephemeral.example",
+            backend_name="powerdns-sandbox",
+        )
+        self.powerdns_adapter.records["ephemeral.example"] = ()
+        self.client.post("/auth/login", json={"username": "admin", "password": "admin"})
+
+        discover_response = self.client.get("/admin/backends/powerdns-sandbox/zones/discover")
+        import_response = self.client.post(
+            "/admin/backends/powerdns-sandbox/zones/import",
+            json={"zoneNames": ["ephemeral.example"]},
+            headers=self.csrf_headers(),
+        )
+        assign_response = self.client.post(
+            "/admin/grants/zones",
+            json={"username": "bob", "zoneName": "ephemeral.example", "actions": ["read"]},
+            headers=self.csrf_headers(),
+        )
+        self.client.post("/auth/logout", headers=self.csrf_headers())
+        self.client.post("/auth/login", json={"username": "bob", "password": "viewer"})
+        zones_response = self.client.get("/zones")
+
+        self.assertEqual(discover_response.status_code, 200)
+        self.assertIn(
+            {"name": "ephemeral.example", "backendName": "powerdns-sandbox", "managed": False},
+            discover_response.json()["items"],
+        )
+        self.assertEqual(import_response.status_code, 200)
+        self.assertEqual(
+            [item["name"] for item in import_response.json()["importedZones"]],
+            ["ephemeral.example"],
         )
         self.assertEqual(assign_response.status_code, 200)
         self.assertEqual(

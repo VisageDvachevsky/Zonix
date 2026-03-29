@@ -135,7 +135,7 @@ class PowerDNSReadAdapterTests(unittest.TestCase):
             ),
         )
 
-        adapter.create_record_set(
+        created_a = adapter.create_record_set(
             RecordSet(
                 zone_name="example.com",
                 name="www",
@@ -144,14 +144,34 @@ class PowerDNSReadAdapterTests(unittest.TestCase):
                 values=("192.0.2.10",),
             )
         )
+        created_txt = adapter.create_record_set(
+            RecordSet(
+                zone_name="example.com",
+                name="txt",
+                record_type="TXT",
+                ttl=300,
+                values=("hello world", 'say "hi"'),
+            )
+        )
         adapter.delete_record_set("example.com", "www", "A")
 
-        self.assertEqual(len(write_calls), 2)
+        self.assertEqual(len(write_calls), 3)
+        self.assertEqual(created_a.values, ("192.0.2.10",))
+        self.assertEqual(created_txt.values, ('"hello world"', r'"say \"hi\""'))
         replace_payload = loads(write_calls[0][3].decode("utf-8"))
-        delete_payload = loads(write_calls[1][3].decode("utf-8"))
+        txt_payload = loads(write_calls[1][3].decode("utf-8"))
+        delete_payload = loads(write_calls[2][3].decode("utf-8"))
         self.assertEqual(replace_payload["rrsets"][0]["changetype"], "REPLACE")
         self.assertEqual(replace_payload["rrsets"][0]["name"], "www.example.com.")
         self.assertEqual(replace_payload["rrsets"][0]["records"][0]["content"], "192.0.2.10")
+        self.assertEqual(txt_payload["rrsets"][0]["name"], "txt.example.com.")
+        self.assertEqual(
+            txt_payload["rrsets"][0]["records"],
+            [
+                {"content": '"hello world"', "disabled": False},
+                {"content": r'"say \"hi\""', "disabled": False},
+            ],
+        )
         self.assertEqual(delete_payload["rrsets"][0]["changetype"], "DELETE")
         self.assertEqual(delete_payload["rrsets"][0]["type"], "A")
 

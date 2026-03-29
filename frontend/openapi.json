@@ -1,0 +1,2635 @@
+{
+  "components": {
+    "schemas": {
+      "AdminUserListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AdminUserListResponse",
+        "type": "object"
+      },
+      "AdminUserResponse": {
+        "properties": {
+          "authSource": {
+            "minLength": 1,
+            "title": "Authsource",
+            "type": "string"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "role",
+          "authSource",
+          "isActive"
+        ],
+        "title": "AdminUserResponse",
+        "type": "object"
+      },
+      "AdminUserRoleRequest": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "AdminUserRoleRequest",
+        "type": "object"
+      },
+      "ApiTokenCreateRequest": {
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ApiTokenCreateRequest",
+        "type": "object"
+      },
+      "ApiTokenCreateResponse": {
+        "properties": {
+          "token": {
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          },
+          "tokenName": {
+            "minLength": 1,
+            "title": "Tokenname",
+            "type": "string"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "tokenName",
+          "token"
+        ],
+        "title": "ApiTokenCreateResponse",
+        "type": "object"
+      },
+      "AuditEventListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AuditEventListResponse",
+        "type": "object"
+      },
+      "AuditEventResponse": {
+        "properties": {
+          "action": {
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "minLength": 1,
+            "title": "Actor",
+            "type": "string"
+          },
+          "backendName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backendname"
+          },
+          "createdAt": {
+            "minLength": 1,
+            "title": "Createdat",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "zoneName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zonename"
+          }
+        },
+        "required": [
+          "actor",
+          "action",
+          "payload",
+          "createdAt"
+        ],
+        "title": "AuditEventResponse",
+        "type": "object"
+      },
+      "AuthSessionResponse": {
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthenticatedUserResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "authenticated"
+        ],
+        "title": "AuthSessionResponse",
+        "type": "object"
+      },
+      "AuthSettingsResponse": {
+        "properties": {
+          "bootstrapAdminEnabled": {
+            "title": "Bootstrapadminenabled",
+            "type": "boolean"
+          },
+          "csrfEnabled": {
+            "title": "Csrfenabled",
+            "type": "boolean"
+          },
+          "localLoginEnabled": {
+            "title": "Localloginenabled",
+            "type": "boolean"
+          },
+          "oidcEnabled": {
+            "title": "Oidcenabled",
+            "type": "boolean"
+          },
+          "oidcSelfSignupEnabled": {
+            "title": "Oidcselfsignupenabled",
+            "type": "boolean"
+          },
+          "sessionCookieName": {
+            "minLength": 1,
+            "title": "Sessioncookiename",
+            "type": "string"
+          },
+          "sessionCookieSameSite": {
+            "minLength": 1,
+            "title": "Sessioncookiesamesite",
+            "type": "string"
+          },
+          "sessionCookieSecure": {
+            "title": "Sessioncookiesecure",
+            "type": "boolean"
+          },
+          "sessionTtlSeconds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Sessionttlseconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "localLoginEnabled",
+          "oidcEnabled",
+          "oidcSelfSignupEnabled",
+          "csrfEnabled",
+          "sessionCookieName",
+          "sessionCookieSameSite",
+          "sessionCookieSecure",
+          "sessionTtlSeconds",
+          "bootstrapAdminEnabled"
+        ],
+        "title": "AuthSettingsResponse",
+        "type": "object"
+      },
+      "AuthenticatedUserResponse": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "role"
+        ],
+        "title": "AuthenticatedUserResponse",
+        "type": "object"
+      },
+      "BackendConfigListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackendResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BackendConfigListResponse",
+        "type": "object"
+      },
+      "BackendConfigRequest": {
+        "properties": {
+          "backendType": {
+            "minLength": 1,
+            "title": "Backendtype",
+            "type": "string"
+          },
+          "capabilities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "backendType"
+        ],
+        "title": "BackendConfigRequest",
+        "type": "object"
+      },
+      "BackendListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BackendResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BackendListResponse",
+        "type": "object"
+      },
+      "BackendResponse": {
+        "properties": {
+          "backendType": {
+            "minLength": 1,
+            "title": "Backendtype",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "backendType",
+          "capabilities"
+        ],
+        "title": "BackendResponse",
+        "type": "object"
+      },
+      "BulkChangeItemRequest": {
+        "properties": {
+          "expectedVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedversion"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/ChangeOperation"
+          },
+          "recordType": {
+            "minLength": 1,
+            "title": "Recordtype",
+            "type": "string"
+          },
+          "ttl": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
+          }
+        },
+        "required": [
+          "operation",
+          "name",
+          "recordType"
+        ],
+        "title": "BulkChangeItemRequest",
+        "type": "object"
+      },
+      "BulkChangeRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BulkChangeItemRequest"
+            },
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zoneName",
+          "items"
+        ],
+        "title": "BulkChangeRequest",
+        "type": "object"
+      },
+      "BulkChangeResponse": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "hasConflicts": {
+            "title": "Hasconflicts",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeSetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zoneName",
+          "applied",
+          "hasConflicts",
+          "items"
+        ],
+        "title": "BulkChangeResponse",
+        "type": "object"
+      },
+      "ChangeOperation": {
+        "enum": [
+          "create",
+          "update",
+          "delete"
+        ],
+        "title": "ChangeOperation",
+        "type": "string"
+      },
+      "ChangePreviewRequest": {
+        "properties": {
+          "expectedVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedversion"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/ChangeOperation"
+          },
+          "recordType": {
+            "minLength": 1,
+            "title": "Recordtype",
+            "type": "string"
+          },
+          "ttl": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "zoneName",
+          "name",
+          "recordType"
+        ],
+        "title": "ChangePreviewRequest",
+        "type": "object"
+      },
+      "ChangeSetResponse": {
+        "properties": {
+          "actor": {
+            "minLength": 1,
+            "title": "Actor",
+            "type": "string"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecordSetResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backendName": {
+            "minLength": 1,
+            "title": "Backendname",
+            "type": "string"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecordSetResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conflictReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflictreason"
+          },
+          "currentVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currentversion"
+          },
+          "expectedVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedversion"
+          },
+          "hasConflict": {
+            "title": "Hasconflict",
+            "type": "boolean"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/ChangeOperation"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "zoneName",
+          "backendName",
+          "operation",
+          "hasConflict",
+          "summary"
+        ],
+        "title": "ChangeSetResponse",
+        "type": "object"
+      },
+      "DiscoveredZoneResponse": {
+        "properties": {
+          "backendName": {
+            "minLength": 1,
+            "title": "Backendname",
+            "type": "string"
+          },
+          "managed": {
+            "title": "Managed",
+            "type": "boolean"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "backendName",
+          "managed"
+        ],
+        "title": "DiscoveredZoneResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "app": {
+            "minLength": 1,
+            "title": "App",
+            "type": "string"
+          },
+          "environment": {
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "inventorySync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventorysync"
+          },
+          "inventorySyncError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventorysyncerror"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "app",
+          "version",
+          "environment"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "IdentityProviderConfigListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityProviderConfigResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "IdentityProviderConfigListResponse",
+        "type": "object"
+      },
+      "IdentityProviderConfigRequest": {
+        "properties": {
+          "claimsMappingRules": {
+            "additionalProperties": true,
+            "title": "Claimsmappingrules",
+            "type": "object"
+          },
+          "clientId": {
+            "minLength": 1,
+            "title": "Clientid",
+            "type": "string"
+          },
+          "clientSecret": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clientsecret"
+          },
+          "issuer": {
+            "minLength": 1,
+            "title": "Issuer",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IdentityProviderKind"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "issuer",
+          "clientId",
+          "scopes"
+        ],
+        "title": "IdentityProviderConfigRequest",
+        "type": "object"
+      },
+      "IdentityProviderConfigResponse": {
+        "properties": {
+          "claimsMappingRules": {
+            "additionalProperties": true,
+            "title": "Claimsmappingrules",
+            "type": "object"
+          },
+          "clientId": {
+            "minLength": 1,
+            "title": "Clientid",
+            "type": "string"
+          },
+          "hasClientSecret": {
+            "title": "Hasclientsecret",
+            "type": "boolean"
+          },
+          "issuer": {
+            "minLength": 1,
+            "title": "Issuer",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IdentityProviderKind"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "issuer",
+          "clientId",
+          "scopes",
+          "hasClientSecret",
+          "claimsMappingRules"
+        ],
+        "title": "IdentityProviderConfigResponse",
+        "type": "object"
+      },
+      "IdentityProviderKind": {
+        "enum": [
+          "oidc"
+        ],
+        "title": "IdentityProviderKind",
+        "type": "string"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "OIDCLoginStartResponse": {
+        "properties": {
+          "authorizationUrl": {
+            "minLength": 1,
+            "title": "Authorizationurl",
+            "type": "string"
+          },
+          "providerName": {
+            "minLength": 1,
+            "title": "Providername",
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerName",
+          "authorizationUrl"
+        ],
+        "title": "OIDCLoginStartResponse",
+        "type": "object"
+      },
+      "OIDCProviderListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OIDCProviderResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "OIDCProviderListResponse",
+        "type": "object"
+      },
+      "OIDCProviderResponse": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/IdentityProviderKind"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ],
+        "title": "OIDCProviderResponse",
+        "type": "object"
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "database": {
+            "minLength": 1,
+            "title": "Database",
+            "type": "string"
+          },
+          "inventorySync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventorysync"
+          },
+          "inventorySyncError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventorysyncerror"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "database"
+        ],
+        "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "RecordDeleteRequest": {
+        "properties": {
+          "expectedVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedversion"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "recordType": {
+            "minLength": 1,
+            "title": "Recordtype",
+            "type": "string"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zoneName",
+          "name",
+          "recordType"
+        ],
+        "title": "RecordDeleteRequest",
+        "type": "object"
+      },
+      "RecordListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecordSetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RecordListResponse",
+        "type": "object"
+      },
+      "RecordSetRequest": {
+        "properties": {
+          "expectedVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedversion"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "recordType": {
+            "minLength": 1,
+            "title": "Recordtype",
+            "type": "string"
+          },
+          "ttl": {
+            "exclusiveMinimum": 0.0,
+            "title": "Ttl",
+            "type": "integer"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Values",
+            "type": "array"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zoneName",
+          "name",
+          "recordType",
+          "ttl",
+          "values"
+        ],
+        "title": "RecordSetRequest",
+        "type": "object"
+      },
+      "RecordSetResponse": {
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "recordType": {
+            "minLength": 1,
+            "title": "Recordtype",
+            "type": "string"
+          },
+          "ttl": {
+            "exclusiveMinimum": 0.0,
+            "title": "Ttl",
+            "type": "integer"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zoneName",
+          "name",
+          "recordType",
+          "ttl",
+          "values",
+          "version"
+        ],
+        "title": "RecordSetResponse",
+        "type": "object"
+      },
+      "Role": {
+        "enum": [
+          "admin",
+          "editor",
+          "viewer"
+        ],
+        "title": "Role",
+        "type": "string"
+      },
+      "ServiceAccountListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceAccountResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ServiceAccountListResponse",
+        "type": "object"
+      },
+      "ServiceAccountRequest": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "role"
+        ],
+        "title": "ServiceAccountRequest",
+        "type": "object"
+      },
+      "ServiceAccountResponse": {
+        "properties": {
+          "authSource": {
+            "minLength": 1,
+            "title": "Authsource",
+            "type": "string"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "role",
+          "authSource",
+          "isActive"
+        ],
+        "title": "ServiceAccountResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ZoneDiscoveryResponse": {
+        "properties": {
+          "backendName": {
+            "minLength": 1,
+            "title": "Backendname",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredZoneResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "backendName",
+          "items"
+        ],
+        "title": "ZoneDiscoveryResponse",
+        "type": "object"
+      },
+      "ZoneGrantListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneGrantResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ZoneGrantListResponse",
+        "type": "object"
+      },
+      "ZoneGrantRequest": {
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Actions",
+            "type": "array"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "zoneName",
+          "actions"
+        ],
+        "title": "ZoneGrantRequest",
+        "type": "object"
+      },
+      "ZoneGrantResponse": {
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          },
+          "zoneName": {
+            "minLength": 1,
+            "title": "Zonename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "zoneName",
+          "actions"
+        ],
+        "title": "ZoneGrantResponse",
+        "type": "object"
+      },
+      "ZoneImportRequest": {
+        "properties": {
+          "zoneNames": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zonenames"
+          }
+        },
+        "title": "ZoneImportRequest",
+        "type": "object"
+      },
+      "ZoneImportResponse": {
+        "properties": {
+          "backendName": {
+            "minLength": 1,
+            "title": "Backendname",
+            "type": "string"
+          },
+          "importedZones": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneResponse"
+            },
+            "title": "Importedzones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "backendName",
+          "importedZones"
+        ],
+        "title": "ZoneImportResponse",
+        "type": "object"
+      },
+      "ZoneListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ZoneListResponse",
+        "type": "object"
+      },
+      "ZoneResponse": {
+        "properties": {
+          "backendName": {
+            "minLength": 1,
+            "title": "Backendname",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "backendName"
+        ],
+        "title": "ZoneResponse",
+        "type": "object"
+      },
+      "ZoneSyncResponse": {
+        "properties": {
+          "backendName": {
+            "minLength": 1,
+            "title": "Backendname",
+            "type": "string"
+          },
+          "syncedZones": {
+            "items": {
+              "$ref": "#/components/schemas/ZoneResponse"
+            },
+            "title": "Syncedzones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "backendName",
+          "syncedZones"
+        ],
+        "title": "ZoneSyncResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Zonix API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/backends": {
+      "get": {
+        "operationId": "list_admin_backends_admin_backends_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendConfigListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Admin Backends"
+      },
+      "post": {
+        "operationId": "register_backend_config_admin_backends_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackendConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Backend Config"
+      }
+    },
+    "/admin/backends/{backend_name}": {
+      "delete": {
+        "operationId": "delete_backend_config_admin_backends__backend_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backend_name",
+            "required": true,
+            "schema": {
+              "title": "Backend Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Backend Config"
+      }
+    },
+    "/admin/backends/{backend_name}/zones/discover": {
+      "get": {
+        "operationId": "discover_backend_zones_admin_backends__backend_name__zones_discover_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backend_name",
+            "required": true,
+            "schema": {
+              "title": "Backend Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Backend Zones"
+      }
+    },
+    "/admin/backends/{backend_name}/zones/import": {
+      "post": {
+        "operationId": "import_backend_zones_admin_backends__backend_name__zones_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backend_name",
+            "required": true,
+            "schema": {
+              "title": "Backend Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZoneImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Backend Zones"
+      }
+    },
+    "/admin/backends/{backend_name}/zones/sync": {
+      "post": {
+        "operationId": "sync_backend_zones_admin_backends__backend_name__zones_sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backend_name",
+            "required": true,
+            "schema": {
+              "title": "Backend Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Backend Zones"
+      }
+    },
+    "/admin/grants/zones": {
+      "post": {
+        "operationId": "assign_zone_grant_admin_grants_zones_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZoneGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneGrantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Zone Grant"
+      }
+    },
+    "/admin/grants/{username}": {
+      "get": {
+        "operationId": "list_zone_grants_admin_grants__username__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneGrantListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Zone Grants"
+      }
+    },
+    "/admin/identity-providers": {
+      "get": {
+        "operationId": "list_admin_identity_providers_admin_identity_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityProviderConfigListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Admin Identity Providers"
+      },
+      "post": {
+        "operationId": "register_identity_provider_config_admin_identity_providers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityProviderConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityProviderConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Identity Provider Config"
+      }
+    },
+    "/admin/identity-providers/{provider_name}": {
+      "delete": {
+        "operationId": "delete_identity_provider_config_admin_identity_providers__provider_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_name",
+            "required": true,
+            "schema": {
+              "title": "Provider Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Identity Provider Config"
+      }
+    },
+    "/admin/service-accounts": {
+      "get": {
+        "operationId": "list_service_accounts_admin_service_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAccountListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Service Accounts"
+      },
+      "post": {
+        "operationId": "create_service_account_admin_service_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceAccountResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Service Account"
+      }
+    },
+    "/admin/service-accounts/{username}/tokens": {
+      "post": {
+        "operationId": "create_service_account_token_admin_service_accounts__username__tokens_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Service Account Token"
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "list_admin_users_admin_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Admin Users"
+      }
+    },
+    "/admin/users/{username}/role": {
+      "put": {
+        "operationId": "update_admin_user_role_admin_users__username__role_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Admin User Role"
+      }
+    },
+    "/audit": {
+      "get": {
+        "operationId": "list_audit_events_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audit Events"
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "logout_auth_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "me_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me"
+      }
+    },
+    "/auth/oidc/providers": {
+      "get": {
+        "operationId": "list_oidc_providers_auth_oidc_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCProviderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Oidc Providers"
+      }
+    },
+    "/auth/oidc/{provider_name}/callback": {
+      "get": {
+        "operationId": "complete_oidc_login_auth_oidc__provider_name__callback_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_name",
+            "required": true,
+            "schema": {
+              "title": "Provider Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "title": "State",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Oidc Login"
+      }
+    },
+    "/auth/oidc/{provider_name}/login": {
+      "get": {
+        "operationId": "start_oidc_login_auth_oidc__provider_name__login_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_name",
+            "required": true,
+            "schema": {
+              "title": "Provider Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "return_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Return To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OIDCLoginStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Oidc Login"
+      }
+    },
+    "/auth/settings": {
+      "get": {
+        "operationId": "auth_settings_auth_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Settings"
+      }
+    },
+    "/backends": {
+      "get": {
+        "operationId": "list_backends_backends_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Backends"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready"
+      }
+    },
+    "/zones": {
+      "get": {
+        "operationId": "list_zones_zones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Zones"
+      }
+    },
+    "/zones/{zone_name}": {
+      "get": {
+        "operationId": "get_zone_zones__zone_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "zone_name",
+            "required": true,
+            "schema": {
+              "title": "Zone Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Zone"
+      }
+    },
+    "/zones/{zone_name}/changes/bulk": {
+      "post": {
+        "operationId": "apply_bulk_zone_changes_zones__zone_name__changes_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "zone_name",
+            "required": true,
+            "schema": {
+              "title": "Zone Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChangeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Bulk Zone Changes"
+      }
+    },
+    "/zones/{zone_name}/changes/preview": {
+      "post": {
+        "operationId": "preview_zone_change_zones__zone_name__changes_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "zone_name",
+            "required": true,
+            "schema": {
+              "title": "Zone Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Zone Change"
+      }
+    },
+    "/zones/{zone_name}/records": {
+      "delete": {
+        "operationId": "delete_zone_record_zones__zone_name__records_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "zone_name",
+            "required": true,
+            "schema": {
+              "title": "Zone Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Zone Record"
+      },
+      "get": {
+        "operationId": "list_zone_records_zones__zone_name__records_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "zone_name",
+            "required": true,
+            "schema": {
+              "title": "Zone Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Zone Records"
+      },
+      "post": {
+        "operationId": "create_zone_record_zones__zone_name__records_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "zone_name",
+            "required": true,
+            "schema": {
+              "title": "Zone Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordSetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Zone Record"
+      },
+      "put": {
+        "operationId": "update_zone_record_zones__zone_name__records_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "zone_name",
+            "required": true,
+            "schema": {
+              "title": "Zone Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordSetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordSetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Zone Record"
+      }
+    }
+  }
+}
