@@ -135,7 +135,7 @@ def validate_browser_return_to(return_to: str | None) -> str | None:
     return return_to
 
 
-def set_auth_cookies(response: Response, session_token: str) -> None:
+def set_auth_cookies(response: Response, session_token: str) -> str:
     csrf_token = token_urlsafe(32)
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -157,6 +157,7 @@ def set_auth_cookies(response: Response, session_token: str) -> None:
         path=settings.session_cookie_path,
         max_age=settings.session_ttl_seconds,
     )
+    return csrf_token
 
 
 def clear_auth_cookies(response: Response) -> None:
@@ -176,6 +177,10 @@ def clear_auth_cookies(response: Response) -> None:
         domain=settings.session_cookie_domain,
         path=settings.session_cookie_path,
     )
+
+
+def get_csrf_token_from_request(request: Request) -> str | None:
+    return request.cookies.get(CSRF_COOKIE_NAME)
 
 
 def enforce_csrf(request: Request) -> None:
@@ -624,10 +629,11 @@ def create_app(
             action="login.success",
             payload={"role": user.role.value},
         )
-        set_auth_cookies(response, session_token)
+        csrf_token = set_auth_cookies(response, session_token)
         return AuthSessionResponse(
             authenticated=True,
             user=AuthenticatedUserResponse(username=user.username, role=user.role),
+            csrfToken=csrf_token,
         )
 
     @app.post("/auth/logout", response_model=AuthSessionResponse)
@@ -648,7 +654,7 @@ def create_app(
                 payload={"authSource": "local" if user_record is None else user_record.auth_source},
             )
         clear_auth_cookies(response)
-        return AuthSessionResponse(authenticated=False, user=None)
+        return AuthSessionResponse(authenticated=False, user=None, csrfToken=None)
 
     @app.get("/auth/settings", response_model=AuthSettingsResponse)
     def auth_settings(
@@ -807,15 +813,20 @@ def create_app(
             redirect_response = RedirectResponse(url=return_to, status_code=status.HTTP_303_SEE_OTHER)
             set_auth_cookies(redirect_response, session_token)
             return redirect_response
-        set_auth_cookies(response, session_token)
+        csrf_token = set_auth_cookies(response, session_token)
         return AuthSessionResponse(
             authenticated=True,
             user=AuthenticatedUserResponse(username=user.username, role=user.role),
+            csrfToken=csrf_token,
         )
 
     @app.get("/auth/me", response_model=AuthSessionResponse)
-    def me(current_user: CurrentUserDependency) -> AuthSessionResponse:
-        return AuthSessionResponse(authenticated=True, user=current_user)
+    def me(request: Request, current_user: CurrentUserDependency) -> AuthSessionResponse:
+        return AuthSessionResponse(
+            authenticated=True,
+            user=current_user,
+            csrfToken=get_csrf_token_from_request(request),
+        )
 
     @app.get("/admin/users", response_model=AdminUserListResponse)
     def list_admin_users(

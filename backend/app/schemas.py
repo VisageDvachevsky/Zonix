@@ -73,6 +73,7 @@ class ApiTokenCreateResponse(BaseModel):
 class AuthSessionResponse(BaseModel):
     authenticated: bool
     user: AuthenticatedUserResponse | None = None
+    csrf_token: str | None = Field(default=None, alias="csrfToken")
 
 
 class AuthSettingsResponse(BaseModel):

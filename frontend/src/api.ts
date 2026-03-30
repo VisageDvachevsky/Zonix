@@ -33,6 +33,7 @@ export const recordTypeSchema = z.enum([
 export const sessionResponseSchema = z.object({
   authenticated: z.boolean(),
   user: userSchema.nullable(),
+  csrfToken: z.string().min(1).nullable().optional(),
 });
 
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
@@ -402,10 +403,39 @@ export const bulkChangeResponseSchema = z.object({
 export type BulkChangeItem = z.infer<typeof bulkChangeItemSchema>;
 export type BulkChangeResponse = z.infer<typeof bulkChangeResponseSchema>;
 
+export const changeSetResponseSchema = z.object({
+  actor: z.string().min(1),
+  zoneName: z.string().min(1),
+  backendName: z.string().min(1),
+  operation: z.enum(["create", "update", "delete"]),
+  before: recordSetSchema.nullable().optional(),
+  after: recordSetSchema.nullable().optional(),
+  expectedVersion: z.string().min(1).nullable().optional(),
+  currentVersion: z.string().min(1).nullable().optional(),
+  hasConflict: z.boolean(),
+  conflictReason: z.string().min(1).nullable().optional(),
+  summary: z.string().min(1),
+});
+
+export const auditEventSchema = z.object({
+  actor: z.string().min(1),
+  action: z.string().min(1),
+  zoneName: z.string().min(1).nullable().optional(),
+  backendName: z.string().min(1).nullable().optional(),
+  payload: z.record(z.string(), z.unknown()),
+  createdAt: z.string().min(1),
+});
+
+export const auditEventListResponseSchema = z.object({
+  items: z.array(auditEventSchema),
+});
+
+export type ChangeSetResponse = z.infer<typeof changeSetResponseSchema>;
+export type AuditEvent = z.infer<typeof auditEventSchema>;
+export type AuditEventListResponse = z.infer<typeof auditEventListResponseSchema>;
+
 const fallbackApiBaseUrl =
-  typeof window === "undefined"
-    ? "http://127.0.0.1:8000"
-    : `${window.location.protocol}//${window.location.hostname}:8000`;
+  typeof window === "undefined" ? "http://127.0.0.1:8000" : "/api";
 
 function normalizeApiBaseUrl(rawApiBaseUrl: string) {
   if (typeof window === "undefined") {
@@ -433,6 +463,7 @@ const apiBaseUrl = normalizeApiBaseUrl(
 export const generatedApiClient = createGeneratedApiClient(apiBaseUrl);
 const csrfCookieName = "zonix_csrf_token";
 const csrfHeaderName = "X-CSRF-Token";
+let csrfTokenMemory: string | null = null;
 
 function readCookie(name: string) {
   if (typeof document === "undefined") {
@@ -450,8 +481,12 @@ function readCookie(name: string) {
   return null;
 }
 
+function persistCsrfToken(token: string | null | undefined) {
+  csrfTokenMemory = token ?? null;
+}
+
 function withCsrfHeaders(headers: Record<string, string>) {
-  const csrfToken = readCookie(csrfCookieName);
+  const csrfToken = csrfTokenMemory ?? readCookie(csrfCookieName);
   return csrfToken ? { ...headers, [csrfHeaderName]: csrfToken } : headers;
 }
 
@@ -495,7 +530,7 @@ export async function fetchHealth(): Promise<HealthResponse> {
 }
 
 export async function fetchSession(): Promise<SessionResponse> {
-  const { data, response } = await generatedApiClient.GET("/auth/me", {
+  const { data, error, response } = await generatedApiClient.GET("/auth/me", {
     credentials: "include",
     headers: {
       Accept: "application/json",
@@ -503,14 +538,18 @@ export async function fetchSession(): Promise<SessionResponse> {
   });
 
   if (response.status === 401) {
+    persistCsrfToken(null);
     return { authenticated: false, user: null };
   }
 
   if (!response.ok || data === undefined) {
-    throw new Error(`Session lookup failed with status ${response.status}`);
+    const detail = detailFromError(error);
+    throw new Error(detail ?? `Session lookup failed with status ${response.status}`);
   }
 
-  return sessionResponseSchema.parse(data);
+  const session = sessionResponseSchema.parse(data);
+  persistCsrfToken(session.csrfToken);
+  return session;
 }
 
 export async function fetchAuthSettings(): Promise<AuthSettingsResponse> {
@@ -561,7 +600,7 @@ export async function login(input: {
   password: string;
 }): Promise<SessionResponse> {
   const payload = loginRequestSchema.parse(input);
-  return unwrapGeneratedResponse(
+  const session = await unwrapGeneratedResponse(
     generatedApiClient.POST("/auth/login", {
       credentials: "include",
       headers: {
@@ -573,10 +612,12 @@ export async function login(input: {
     "Invalid username or password",
     sessionResponseSchema,
   );
+  persistCsrfToken(session.csrfToken);
+  return session;
 }
 
 export async function logout(): Promise<SessionResponse> {
-  return unwrapGeneratedResponse(
+  const session = await unwrapGeneratedResponse(
     generatedApiClient.POST("/auth/logout", {
       credentials: "include",
       headers: withCsrfHeaders({
@@ -586,6 +627,8 @@ export async function logout(): Promise<SessionResponse> {
     "Logout failed",
     sessionResponseSchema,
   );
+  persistCsrfToken(session.csrfToken);
+  return session;
 }
 
 export async function fetchBackends(): Promise<BackendListResponse> {
@@ -985,6 +1028,47 @@ export async function applyBulkZoneChanges(input: {
     }),
     "Bulk change apply failed",
     bulkChangeResponseSchema,
+  );
+}
+
+export async function previewZoneChange(input: {
+  operation: "create" | "update" | "delete";
+  zoneName: string;
+  name: string;
+  recordType: RecordType;
+  ttl?: number;
+  values?: string[];
+  expectedVersion?: string;
+}): Promise<ChangeSetResponse> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.POST("/zones/{zone_name}/changes/preview", {
+      params: { path: { zone_name: input.zoneName } },
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...withCsrfHeaders({}),
+      },
+      body: input,
+    }),
+    "Change preview failed",
+    changeSetResponseSchema,
+  );
+}
+
+export async function fetchAuditEvents(
+  limit = 250,
+): Promise<AuditEventListResponse> {
+  return unwrapGeneratedResponse(
+    generatedApiClient.GET("/audit", {
+      params: { query: { limit } },
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    "Audit event listing failed",
+    auditEventListResponseSchema,
   );
 }
 

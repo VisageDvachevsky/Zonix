@@ -21,3 +21,4 @@ deploy/backend-vm.env
 deploy/nginx-dex-proxy.conf
 deploy/mock-oidc/
 plan.txt
+/tmp

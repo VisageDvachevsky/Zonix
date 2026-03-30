@@ -47,19 +47,7 @@ class ZoneReadService:
         self.adapters = dict(adapters)
 
     def list_zones(self, user: User) -> tuple[Zone, ...]:
-        granted_zone_names = self._granted_zone_names(user)
-        zones: list[Zone] = []
-
-        for backend in self.access_service.backend_repository.list_all():
-            try:
-                adapter = self._get_adapter(backend)
-            except ZoneAdapterNotConfiguredError:
-                continue
-            for zone in adapter.list_zones():
-                if granted_zone_names is None or zone.name in granted_zone_names:
-                    zones.append(zone)
-
-        return tuple(sorted(zones, key=lambda zone: zone.name))
+        return self.access_service.list_accessible_zones(user)
 
     def get_zone(self, user: User, zone_name: str) -> Zone:
         zone = self._find_accessible_zone(user, zone_name)
@@ -82,11 +70,18 @@ class ZoneReadService:
     def _find_accessible_zone(self, user: User, zone_name: str) -> Zone | None:
         granted_zone_names = self._granted_zone_names(user)
 
+        zone = self.access_service.zone_repository.get_by_name(zone_name)
+        if zone is not None:
+            if granted_zone_names is None or zone.name in granted_zone_names:
+                return zone
+            return None
+
         for backend in self.access_service.backend_repository.list_all():
             try:
                 adapter = self._get_adapter(backend)
             except ZoneAdapterNotConfiguredError:
                 continue
+
             zone = adapter.get_zone(zone_name)
             if zone is None:
                 continue

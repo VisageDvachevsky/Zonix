@@ -153,10 +153,13 @@ The local-only backend deliberately uses `127.0.0.1:8010` so it does not collide
 Frontend:
 
 ```bash
-set VITE_API_BASE_URL=http://127.0.0.1:8010
+set ZONIX_DEV_PROXY_TARGET=http://127.0.0.1:8010
 npm install --prefix frontend
 npm run dev:frontend
 ```
+
+The browser now talks to the frontend on `5173` or `4173` and Vite proxies `/api/*` to the backend target.
+That avoids CORS drift between local-only backend runs and the Docker stack.
 
 If you are using the Docker stack, do not run `npm run dev:backend` at the same time. The compose backend owns `localhost:8000`.
 

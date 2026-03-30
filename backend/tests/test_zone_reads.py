@@ -30,6 +30,17 @@ class InMemoryZoneReadAdapter:
         return self._records.get(zone_name, ())
 
 
+class FailingZoneReadAdapter:
+    def list_zones(self) -> tuple[Zone, ...]:
+        raise RuntimeError("upstream unavailable")
+
+    def get_zone(self, zone_name: str) -> Zone | None:
+        raise RuntimeError("upstream unavailable")
+
+    def list_records(self, zone_name: str) -> tuple[RecordSet, ...]:
+        raise RuntimeError("upstream unavailable")
+
+
 class ZoneReadServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.access_service = AccessService(
@@ -141,7 +152,7 @@ class ZoneReadServiceTests(unittest.TestCase):
         self.assertEqual([zone.name for zone in editor_zones], ["example.com"])
         self.assertEqual([zone.name for zone in viewer_zones], ["lab.example"])
 
-    def test_backends_without_read_adapters_are_skipped(self) -> None:
+    def test_registered_zones_remain_visible_without_read_adapters(self) -> None:
         self.access_service.register_backend(
             Backend(
                 name="manual-bind",
@@ -155,7 +166,7 @@ class ZoneReadServiceTests(unittest.TestCase):
 
         self.assertEqual(
             [zone.name for zone in zones],
-            ["example.com", "internal.example", "lab.example"],
+            ["example.com", "internal.example", "lab.example", "manual.example"],
         )
 
     def test_zone_detail_and_records_use_normalized_models(self) -> None:
@@ -174,6 +185,37 @@ class ZoneReadServiceTests(unittest.TestCase):
 
         with self.assertRaises(ZoneNotFoundError):
             self.service.get_zone(User(username="admin", role=Role.ADMIN), "ghost.example")
+
+    def test_zone_inventory_uses_persisted_registry_when_backend_adapter_is_unhealthy(self) -> None:
+        self.service = ZoneReadService(
+            access_service=self.access_service,
+            adapters={
+                "powerdns-local": FailingZoneReadAdapter(),
+                "bind-lab": InMemoryZoneReadAdapter(
+                    zones=(Zone(name="lab.example", backend_name="bind-lab"),),
+                    records={
+                        "lab.example": (
+                            RecordSet(
+                                zone_name="lab.example",
+                                name="@",
+                                record_type="TXT",
+                                ttl=300,
+                                values=('"lab"',),
+                            ),
+                        )
+                    },
+                ),
+            },
+        )
+
+        zones = self.service.list_zones(User(username="admin", role=Role.ADMIN))
+        zone = self.service.get_zone(User(username="admin", role=Role.ADMIN), "example.com")
+
+        self.assertEqual(
+            [item.name for item in zones],
+            ["example.com", "internal.example", "lab.example"],
+        )
+        self.assertEqual(zone.backend_name, "powerdns-local")
 
 
 if __name__ == "__main__":

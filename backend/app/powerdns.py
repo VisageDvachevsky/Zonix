@@ -58,10 +58,11 @@ class PowerDNSClient:
     def list_zones(self) -> object:
         return self._get(f"/servers/{quote(self.server_id, safe='')}/zones")
 
-    def get_zone(self, zone_name: str) -> object | None:
+    def get_zone(self, zone_name: str, *, include_rrsets: bool = False) -> object | None:
         zone_id = self._encode_zone_id(zone_name)
+        query = "?rrsets=true" if include_rrsets else ""
         try:
-            return self._get(f"/servers/{quote(self.server_id, safe='')}/zones/{zone_id}")
+            return self._get(f"/servers/{quote(self.server_id, safe='')}/zones/{zone_id}{query}")
         except PowerDNSResponseError as error:
             if error.status_code == 404:
                 return None
@@ -203,7 +204,7 @@ class PowerDNSReadAdapter:
 
     def list_records(self, zone_name: str) -> tuple[RecordSet, ...]:
         try:
-            payload = self.client.get_zone(zone_name)
+            payload = self.client.get_zone(zone_name, include_rrsets=True)
         except PowerDNSClientError as error:
             raise UpstreamReadError(self.backend_name, str(error)) from error
 

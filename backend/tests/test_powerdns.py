@@ -97,7 +97,7 @@ class PowerDNSReadAdapterTests(unittest.TestCase):
 
     def test_missing_zone_returns_none_from_detail_lookup(self) -> None:
         def fetcher(url: str, _headers: dict[str, str], _timeout: float) -> object:
-            if "/zones/example.com." in url:
+            if "/zones/example.com." in url and "?rrsets=true" not in url:
                 raise PowerDNSResponseError(404, "not found")
             return []
 
@@ -112,6 +112,31 @@ class PowerDNSReadAdapterTests(unittest.TestCase):
         )
 
         self.assertIsNone(adapter.get_zone("example.com"))
+
+    def test_record_listing_requests_rrsets(self) -> None:
+        requested_urls: list[str] = []
+
+        def fetcher(url: str, _headers: dict[str, str], _timeout: float) -> object:
+            requested_urls.append(url)
+            return {"name": "example.com.", "rrsets": []}
+
+        adapter = PowerDNSReadAdapter(
+            backend_name="powerdns-local",
+            client=PowerDNSClient(
+                api_url="http://powerdns:8081",
+                api_key="test-key",
+                server_id="localhost",
+                fetcher=fetcher,
+            ),
+        )
+
+        records = adapter.list_records("example.com")
+
+        self.assertEqual(records, ())
+        self.assertTrue(
+            requested_urls[0].endswith("/zones/example.com.?rrsets=true"),
+            requested_urls[0],
+        )
 
     def test_adapter_writes_patch_payload_for_replace_and_delete(self) -> None:
         write_calls: list[tuple[str, dict[str, str], float, bytes]] = []
