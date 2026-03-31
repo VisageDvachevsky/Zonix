@@ -55,9 +55,13 @@ What is still intentionally incomplete:
 - [`docs/auth-modes.md`](docs/auth-modes.md)
 - [`docs/backend-adapters.md`](docs/backend-adapters.md)
 - [`docs/api-examples.md`](docs/api-examples.md)
+- [`docs/real-dns-deployment.md`](docs/real-dns-deployment.md)
 - [`docs/release-notes-v0.1.0-rc1.md`](docs/release-notes-v0.1.0-rc1.md)
+- [`docs/release-notes-v0.1.0-rc2.md`](docs/release-notes-v0.1.0-rc2.md)
 - [`docs/upgrade-notes-v0.1.0-rc1.md`](docs/upgrade-notes-v0.1.0-rc1.md)
 - [`docs/known-limitations-v0.1.0-rc1.md`](docs/known-limitations-v0.1.0-rc1.md)
+- [`docs/closed-beta-checklist-v0.1.0-rc1.md`](docs/closed-beta-checklist-v0.1.0-rc1.md)
+- [`docs/closed-beta-runbook-v0.1.0-rc1.md`](docs/closed-beta-runbook-v0.1.0-rc1.md)
 
 ## Development
 

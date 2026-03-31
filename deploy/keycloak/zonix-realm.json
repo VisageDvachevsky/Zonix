@@ -22,13 +22,19 @@
       "implicitFlowEnabled": false,
       "redirectUris": [
         "http://localhost:8000/auth/oidc/corp-oidc/callback",
-        "http://127.0.0.1:8000/auth/oidc/corp-oidc/callback"
+        "http://127.0.0.1:8000/auth/oidc/corp-oidc/callback",
+        "http://localhost:28000/auth/oidc/corp-oidc/callback",
+        "http://127.0.0.1:28000/auth/oidc/corp-oidc/callback"
       ],
       "webOrigins": [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:25173",
+        "http://127.0.0.1:25173",
         "http://localhost:8000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        "http://localhost:28000",
+        "http://127.0.0.1:28000"
       ],
       "protocolMappers": [
         {

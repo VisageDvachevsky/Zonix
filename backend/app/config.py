@@ -98,6 +98,9 @@ class Settings:
     database_connect_timeout_seconds: int = field(
         default_factory=lambda: int(getenv("ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS", "2"))
     )
+    public_backend_base_url: str | None = field(
+        default_factory=lambda: getenv("ZONIX_PUBLIC_BACKEND_BASE_URL") or None
+    )
     bootstrap_admin_username: str = field(
         default_factory=lambda: getenv("ZONIX_BOOTSTRAP_ADMIN_USERNAME", "admin")
     )
@@ -250,6 +253,11 @@ class Settings:
             raise ValueError("ZONIX_ALLOWED_HOSTS must define at least one host")
         if self.database_connect_timeout_seconds <= 0:
             raise ValueError("ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS must be positive")
+        if (
+            self.public_backend_base_url is not None
+            and not self.public_backend_base_url.startswith(("http://", "https://"))
+        ):
+            raise ValueError("ZONIX_PUBLIC_BACKEND_BASE_URL must start with http:// or https://")
         if self.request_max_body_bytes <= 0:
             raise ValueError("ZONIX_REQUEST_MAX_BODY_BYTES must be positive")
         if self.login_rate_limit_attempts <= 0:

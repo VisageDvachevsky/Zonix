@@ -807,15 +807,33 @@ type TutorialHubProps = {
 
 function TutorialHub(props: TutorialHubProps) {
   const ui = tutorialUiCopy[props.locale];
+  const completedCount = props.status.completedChapterIds.length;
+  const eligibleCount = props.chapters.filter((chapter) => chapter.isEligible(props.contextData)).length;
   return (
     <div className="tutorial-layer" role="presentation">
       <div className="tutorial-backdrop" />
       <div className="tutorial-hub" aria-labelledby="tutorial-hub-title" role="dialog" aria-modal="true">
         <div className="tutorial-hub-header">
-          <div>
-            <p className="tutorial-kicker">{ui.chapterListTitle}</p>
-            <h2 id="tutorial-hub-title">{ui.hubTitle}</h2>
-            <p>{ui.hubBody}</p>
+          <div className="tutorial-hub-hero">
+            <div className="tutorial-hub-copy">
+              <p className="tutorial-kicker">{ui.chapterListTitle}</p>
+              <h2 id="tutorial-hub-title">{ui.hubTitle}</h2>
+              <p>{ui.hubBody}</p>
+            </div>
+            <div className="tutorial-hub-meta">
+              <div className="tutorial-hub-meta-card">
+                <span>{ui.completed}</span>
+                <strong>
+                  {completedCount}/{props.chapters.length}
+                </strong>
+              </div>
+              <div className="tutorial-hub-meta-card">
+                <span>{ui.available}</span>
+                <strong>
+                  {eligibleCount}/{props.chapters.length}
+                </strong>
+              </div>
+            </div>
           </div>
           <button className="secondary-button" onClick={props.closeHub} type="button">
             {ui.close}
@@ -851,10 +869,21 @@ function TutorialHub(props: TutorialHubProps) {
                 key={chapter.id}
                 className={`tutorial-hub-card ${isCurrent ? "tutorial-hub-card-current" : ""}`}
               >
+                <div className="tutorial-hub-card-accent" aria-hidden="true" />
                 <div className="tutorial-hub-card-copy">
                   <div className="tutorial-hub-status">
                     <span>{meta.label}</span>
-                    <strong>
+                    <strong
+                      className={`tutorial-status-badge ${
+                        isCurrent
+                          ? "tutorial-status-badge-current"
+                          : isCompleted
+                            ? "tutorial-status-badge-completed"
+                            : eligible
+                              ? "tutorial-status-badge-available"
+                              : "tutorial-status-badge-locked"
+                      }`}
+                    >
                       {isCurrent
                         ? ui.current
                         : isCompleted
@@ -910,6 +939,12 @@ type TutorialOverlayProps = {
 function TutorialOverlay(props: TutorialOverlayProps) {
   const ui = tutorialUiCopy[props.locale];
   const [cardSize, setCardSize] = useState({ width: 360, height: 280 });
+  const overallProgress = props.totalChapterCount > 0
+    ? Math.max((props.overallChapterIndex / props.totalChapterCount) * 100, 8)
+    : 0;
+  const chapterProgress = props.chapterStepCount > 0
+    ? Math.max((props.currentStepIndex / props.chapterStepCount) * 100, 10)
+    : 0;
 
   useLayoutEffect(() => {
     const node = props.cardRef.current;
@@ -974,52 +1009,67 @@ function TutorialOverlay(props: TutorialOverlayProps) {
         tabIndex={-1}
       >
         <div className="tutorial-card-frame">
-          <div className="tutorial-progress">
-            <div>
-              <span>{ui.progressOverall}</span>
-              <strong>
-                {props.overallChapterIndex}/{props.totalChapterCount}
-              </strong>
+          <div className="tutorial-card-shell">
+            <div className="tutorial-card-hero">
+              <div className="tutorial-progress">
+                <div className="tutorial-progress-tile">
+                  <span>{ui.progressOverall}</span>
+                  <strong>
+                    {props.overallChapterIndex}/{props.totalChapterCount}
+                  </strong>
+                  <div className="tutorial-progress-rail" aria-hidden="true">
+                    <span style={{ width: `${overallProgress}%` }} />
+                  </div>
+                </div>
+                <div className="tutorial-progress-tile">
+                  <span>{ui.progressChapter}</span>
+                  <strong>
+                    {props.currentStepIndex}/{props.chapterStepCount}
+                  </strong>
+                  <div className="tutorial-progress-rail" aria-hidden="true">
+                    <span style={{ width: `${chapterProgress}%` }} />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <span>{ui.progressChapter}</span>
-              <strong>
-                {props.currentStepIndex}/{props.chapterStepCount}
-              </strong>
+            <div className="tutorial-card-copy">
+              <div className="tutorial-card-badges">
+                <p className="tutorial-kicker">{props.chapterLabel}</p>
+                <span className={`tutorial-step-badge tutorial-step-badge-${props.stepType}`}>
+                  {props.stepType === "modal" ? "Walkthrough" : "Focus"}
+                </span>
+              </div>
+              <h2 id="tutorial-card-title">{props.activeCopy.title}</h2>
+              <p>{props.activeCopy.body}</p>
+              {props.activeCopy.note ? <p className="tutorial-note">{props.activeCopy.note}</p> : null}
+              {props.targetMissing ? <p className="tutorial-note">{ui.targetMissingBody}</p> : null}
             </div>
-          </div>
-          <div className="tutorial-card-copy">
-            <p className="tutorial-kicker">{props.chapterLabel}</p>
-            <h2 id="tutorial-card-title">{props.activeCopy.title}</h2>
-            <p>{props.activeCopy.body}</p>
-            {props.activeCopy.note ? <p className="tutorial-note">{props.activeCopy.note}</p> : null}
-            {props.targetMissing ? <p className="tutorial-note">{ui.targetMissingBody}</p> : null}
-          </div>
-          <div className="tutorial-card-actions">
-            <div className="tutorial-card-actions-secondary">
-              {props.canGoBack ? (
-                <button className="secondary-button" onClick={props.goBack} type="button">
-                  {ui.back}
-                </button>
-              ) : null}
-              {props.canSkip ? (
-                <button className="secondary-button" onClick={props.closeTutorial} type="button">
-                  {ui.skipForNow}
-                </button>
-              ) : null}
-              {props.canDismissForever ? (
-                <button className="secondary-button" onClick={props.onDismissForever} type="button">
-                  {ui.neverShowAgain}
-                </button>
-              ) : null}
+            <div className="tutorial-card-actions">
+              <div className="tutorial-card-actions-secondary">
+                {props.canGoBack ? (
+                  <button className="secondary-button" onClick={props.goBack} type="button">
+                    {ui.back}
+                  </button>
+                ) : null}
+                {props.canSkip ? (
+                  <button className="secondary-button" onClick={props.closeTutorial} type="button">
+                    {ui.skipForNow}
+                  </button>
+                ) : null}
+                {props.canDismissForever ? (
+                  <button className="secondary-button" onClick={props.onDismissForever} type="button">
+                    {ui.neverShowAgain}
+                  </button>
+                ) : null}
+              </div>
+              <button className="primary-button tutorial-primary-button" onClick={props.onNext} type="button">
+                {props.activeCopy.primaryLabel ??
+                  (props.overallChapterIndex === props.totalChapterCount &&
+                  props.currentStepIndex === props.chapterStepCount
+                    ? ui.finish
+                    : ui.next)}
+              </button>
             </div>
-            <button className="primary-button" onClick={props.onNext} type="button">
-              {props.activeCopy.primaryLabel ??
-                (props.overallChapterIndex === props.totalChapterCount &&
-                props.currentStepIndex === props.chapterStepCount
-                  ? ui.finish
-                  : ui.next)}
-            </button>
           </div>
         </div>
       </div>

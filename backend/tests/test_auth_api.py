@@ -1,5 +1,7 @@
 import unittest
+from dataclasses import replace
 from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -19,6 +21,7 @@ from app.domain.models import (
     Zone,
 )
 from app.identity_providers import IdentityProviderService, InMemoryIdentityProviderRepository
+from app import main as main_module
 from app.main import create_app
 from app.oidc import OIDCClient, OIDCService, OIDCStateManager
 from app.security import hash_password
@@ -177,6 +180,7 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(audit_response.status_code, 200)
         self.assertEqual(audit_response.json()["items"][0]["action"], "login.success")
         self.assertEqual(audit_response.json()["items"][0]["actor"], "admin")
+        self.assertEqual(audit_response.json()["items"][0]["payload"]["authSource"], "local")
 
     def test_login_rejects_invalid_credentials(self) -> None:
         response = self.client.post(
@@ -278,6 +282,31 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(start_response.json()["providerName"], "corp-oidc")
         self.assertIn(
             "https://issuer.example/authorize?", start_response.json()["authorizationUrl"]
+        )
+
+    def test_oidc_login_start_uses_public_backend_base_url_for_redirect_uri(self) -> None:
+        patched_settings = replace(
+            main_module.settings,
+            public_backend_base_url="http://127.0.0.1:28000",
+            allowed_web_origins=(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:25173",
+                "http://127.0.0.1:25173",
+            ),
+        )
+        with patch("app.main.settings", patched_settings):
+            start_response = self.client.get(
+                "/auth/oidc/corp-oidc/login",
+                params={"return_to": "http://localhost:25173"},
+            )
+
+        self.assertEqual(start_response.status_code, 200)
+        authorization_url = start_response.json()["authorizationUrl"]
+        redirect_uri = parse_qs(urlparse(authorization_url).query)["redirect_uri"][0]
+        self.assertEqual(
+            redirect_uri,
+            "http://localhost:28000/auth/oidc/corp-oidc/callback",
         )
 
     def test_oidc_callback_maps_groups_into_role_and_zone_access(self) -> None:

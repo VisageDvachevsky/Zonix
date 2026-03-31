@@ -6,6 +6,7 @@ Related docs:
 - [Auth modes](./auth-modes.md)
 - [Backend adapters](./backend-adapters.md)
 - [API examples](./api-examples.md)
+- [Real DNS deployment](./real-dns-deployment.md)
 
 ## Prerequisites
 
@@ -21,7 +22,7 @@ From the repository root:
 npm run compose:up
 ```
 
-This starts:
+This starts, using the host ports currently declared in `deploy/demo.env` unless you override them through `ZONIX_HOST_*_PORT` in the shell:
 
 - Postgres on `localhost:55432`
 - PowerDNS Authoritative API on `localhost:8081`
@@ -32,6 +33,7 @@ This starts:
 The backend container runs SQL migrations, provisions deterministic demo users, and bootstraps a deterministic OIDC provider configuration on startup.
 The stack now reads its demo defaults from `deploy/demo.env`, so the compose file stays readable and the environment can be copied or adjusted without editing YAML first.
 If any of the host ports are already occupied, change the `ZONIX_HOST_*_PORT` values in `deploy/demo.env` and rerun the same command.
+The Compose backend now also derives `ZONIX_ALLOWED_WEB_ORIGINS` from the published frontend port, so OIDC login keeps working when the frontend is published on a non-default host port such as `25173`.
 
 After the containers report healthy, run:
 
@@ -40,6 +42,14 @@ npm run compose:verify
 ```
 
 This checks `health`, `ready`, `metrics`, the bootstrap admin login, and a protected zone listing through the demo stack.
+`compose:verify` resolves the published backend port from the running Compose project, so it still targets the correct stack when you launched Docker with shell-level port overrides instead of editing `deploy/demo.env`.
+If you need to inspect the actual published ports for the current stack, run:
+
+```bash
+docker compose --env-file deploy/demo.env -f deploy/docker-compose.yml port backend 8000
+docker compose --env-file deploy/demo.env -f deploy/docker-compose.yml port frontend 5173
+```
+
 The current demo stack also includes the Day 47 performance pass: non-admin zone/backend reads and audit visibility now use indexed database lookups instead of loading full inventories into Python first.
 
 ## Screenshots

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from http.cookiejar import CookieJar
@@ -23,10 +24,55 @@ def load_demo_env(path: Path) -> None:
 
 load_demo_env(Path(__file__).resolve().parents[1] / "demo.env")
 
-backend_port = os.getenv("ZONIX_HOST_BACKEND_PORT", "8000")
-BASE_URL = os.getenv("ZONIX_DEMO_BASE_URL", f"http://127.0.0.1:{backend_port}").rstrip("/") + "/"
+COMPOSE_DIR = Path(__file__).resolve().parents[1]
+COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
 ADMIN_USERNAME = os.getenv("ZONIX_DEMO_ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ZONIX_DEMO_ADMIN_PASSWORD", "local-dev-admin-change-me")
+
+
+def resolve_running_backend_port() -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--env-file",
+                str(COMPOSE_DIR / "demo.env"),
+                "-f",
+                str(COMPOSE_FILE),
+                "port",
+                "backend",
+                "8000",
+            ],
+            cwd=str(COMPOSE_DIR),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    published = result.stdout.strip()
+    if not published:
+        return None
+    return published.rsplit(":", 1)[-1]
+
+
+def resolve_base_url() -> str:
+    explicit_base_url = os.getenv("ZONIX_DEMO_BASE_URL")
+    if explicit_base_url:
+        return explicit_base_url.rstrip("/") + "/"
+
+    backend_port = (
+        resolve_running_backend_port()
+        or os.getenv("ZONIX_HOST_BACKEND_PORT")
+        or "8000"
+    )
+    return f"http://127.0.0.1:{backend_port}/"
+
+
+BASE_URL = resolve_base_url()
 
 
 def expect_status(response, expected_status: int, context: str) -> None:

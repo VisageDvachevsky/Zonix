@@ -561,6 +561,7 @@ describe("App", () => {
     expect(screen.getByLabelText(/filter audit by actor/i)).toBeVisible();
     expect(screen.getByLabelText(/filter audit by zone/i)).toBeVisible();
     expect(screen.getByLabelText(/search audit events/i)).toBeVisible();
+    expect(await screen.findByText(/OIDC · corp-oidc/i)).toBeVisible();
   });
 
   it("manages zone grants from the standalone access page", async () => {

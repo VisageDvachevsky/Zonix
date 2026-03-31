@@ -128,7 +128,6 @@ def set_inventory_sync_state(
 
 CSRF_COOKIE_NAME = "zonix_csrf_token"
 CSRF_HEADER_NAME = "X-CSRF-Token"
-ALLOWED_BROWSER_RETURN_ORIGINS = frozenset(settings.allowed_web_origins)
 
 
 def validate_browser_return_to(return_to: str | None) -> str | None:
@@ -136,12 +135,42 @@ def validate_browser_return_to(return_to: str | None) -> str | None:
         return None
     parsed = urlparse(return_to)
     origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
-    if origin not in ALLOWED_BROWSER_RETURN_ORIGINS:
+    if origin not in frozenset(settings.allowed_web_origins):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="return_to origin is not allowed",
         )
     return return_to
+
+
+def build_oidc_callback_url(
+    request: Request,
+    provider_name: str,
+    *,
+    return_to: str | None = None,
+) -> str:
+    if settings.public_backend_base_url:
+        public_base = urlparse(settings.public_backend_base_url)
+        callback_scheme = public_base.scheme
+        callback_host = public_base.hostname or "127.0.0.1"
+        callback_port = public_base.port
+
+        if return_to:
+            return_target = urlparse(return_to)
+            if return_target.hostname:
+                callback_host = return_target.hostname
+            if return_target.scheme:
+                callback_scheme = return_target.scheme
+
+        callback_netloc = callback_host
+        if callback_port is not None:
+            callback_netloc = f"{callback_host}:{callback_port}"
+
+        return (
+            f"{callback_scheme}://{callback_netloc}"
+            f"/auth/oidc/{provider_name}/callback"
+        )
+    return str(request.url_for("complete_oidc_login", provider_name=provider_name))
 
 
 def set_auth_cookies(response: Response, session_token: str) -> str:
@@ -685,7 +714,7 @@ def create_app(
         audit_service.log_event(
             actor=user.username,
             action="login.success",
-            payload={"role": user.role.value},
+            payload={"role": user.role.value, "authSource": "local"},
         )
         csrf_token = set_auth_cookies(response, session_token)
         return AuthSessionResponse(
@@ -761,8 +790,10 @@ def create_app(
         try:
             login_request = oidc_service.begin_login(
                 provider_name=provider_name,
-                redirect_uri=str(
-                    request.url_for("complete_oidc_login", provider_name=provider_name)
+                redirect_uri=build_oidc_callback_url(
+                    request,
+                    provider_name,
+                    return_to=resolved_return_to,
                 ),
                 return_to=resolved_return_to,
             )
@@ -800,8 +831,10 @@ def create_app(
                 provider_name=provider_name,
                 code=code,
                 state=state,
-                redirect_uri=str(
-                    request.url_for("complete_oidc_login", provider_name=provider_name)
+                redirect_uri=build_oidc_callback_url(
+                    request,
+                    provider_name,
+                    return_to=return_to,
                 ),
             )
             mapping = oidc_service.map_identity(

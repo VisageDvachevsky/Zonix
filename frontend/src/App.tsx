@@ -350,6 +350,24 @@ function getPayloadEntries(payload: Record<string, unknown>, locale: Locale = "e
   ] as const);
 }
 
+function getAuditAuthSource(event: AuditEvent) {
+  const authSource = event.payload.authSource;
+  return typeof authSource === "string" && authSource.trim().length > 0
+    ? authSource.trim()
+    : null;
+}
+
+function formatAuditAuthSource(authSource: string, locale: Locale = "en") {
+  if (authSource === "local") {
+    return locale === "ru" ? "Локальный вход" : "Local auth";
+  }
+  if (authSource.startsWith("oidc:")) {
+    const providerName = authSource.slice("oidc:".length) || "OIDC";
+    return locale === "ru" ? `OIDC · ${providerName}` : `OIDC · ${providerName}`;
+  }
+  return authSource;
+}
+
 function humanizeCapability(capability: string, locale: Locale = "en") {
   const labels: Record<string, string> = {
     discoverZones: locale === "ru" ? "Обнаружение" : "Discovery",
@@ -2720,27 +2738,44 @@ export function App() {
           ) : null}
 
           <div className="audit-list">
-            {filteredAuditEvents.map((event) => (
-              <article key={`${event.createdAt}-${event.actor}-${event.action}`} className="audit-card">
-                <div className="audit-card-header">
-                  <strong title={event.action}>{humanizeAuditAction(event.action, locale)}</strong>
-                  <span>{formatTime(event.createdAt)}</span>
-                </div>
-                <div className="audit-meta-row">
-                  <span>{tr(locale, "Actor")}: {event.actor}</span>
-                  <span>{tr(locale, "Zone label")}: {event.zoneName ?? "—"}</span>
-                  <span>{tr(locale, "Backend label")}: {event.backendName ?? "—"}</span>
-                </div>
-                <div className="audit-payload-list">
-                  {getPayloadEntries(event.payload, locale).map(([key, value]) => (
-                    <div key={key} className="audit-payload-item">
-                      <span>{tr(locale, "Payload")} · {key}</span>
-                      <strong>{value}</strong>
+            {filteredAuditEvents.map((event) => {
+              const authSource = getAuditAuthSource(event);
+              return (
+                <article key={`${event.createdAt}-${event.actor}-${event.action}`} className="audit-card">
+                  <div className="audit-card-header">
+                    <div className="audit-card-header-copy">
+                      <strong title={event.action}>{humanizeAuditAction(event.action, locale)}</strong>
+                      <div className="audit-card-tags">
+                        {authSource ? (
+                          <span className="audit-chip audit-chip-auth">
+                            {formatAuditAuthSource(authSource, locale)}
+                          </span>
+                        ) : null}
+                        {event.action.startsWith("login.") || event.action.startsWith("logout.") ? (
+                          <span className="audit-chip audit-chip-session">
+                            {locale === "ru" ? "Сессия" : "Session"}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </article>
-            ))}
+                    <span>{formatTime(event.createdAt)}</span>
+                  </div>
+                  <div className="audit-meta-row">
+                    <span>{tr(locale, "Actor")}: {event.actor}</span>
+                    <span>{tr(locale, "Zone label")}: {event.zoneName ?? "—"}</span>
+                    <span>{tr(locale, "Backend label")}: {event.backendName ?? "—"}</span>
+                  </div>
+                  <div className="audit-payload-list">
+                    {getPayloadEntries(event.payload, locale).map(([key, value]) => (
+                      <div key={key} className="audit-payload-item">
+                        <span>{tr(locale, "Payload")} · {key}</span>
+                        <strong>{value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       </section>

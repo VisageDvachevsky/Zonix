@@ -12,6 +12,7 @@ class SettingsTests(unittest.TestCase):
             "ZONIX_ENV": "development",
             "ZONIX_DATABASE_URL": "postgresql://zonix:zonix@127.0.0.1:55432/zonix",
             "ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS": "2",
+            "ZONIX_PUBLIC_BACKEND_BASE_URL": "http://127.0.0.1:8000",
             "ZONIX_BOOTSTRAP_ADMIN_USERNAME": "admin",
             "ZONIX_BOOTSTRAP_ADMIN_PASSWORD": "local-dev-admin-change-me",
             "ZONIX_SESSION_COOKIE_NAME": "zonix_session",
@@ -65,6 +66,19 @@ class SettingsTests(unittest.TestCase):
             "postgresql://zonix:zonix@127.0.0.1:55432/zonix",
         )
         self.assertEqual(settings.database_connect_timeout_seconds, 2)
+        self.assertEqual(settings.public_backend_base_url, "http://127.0.0.1:8000")
+
+    def test_public_backend_base_url_must_be_http_or_https(self) -> None:
+        env = self.base_env | {"ZONIX_PUBLIC_BACKEND_BASE_URL": "backend:8000"}
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_PUBLIC_BACKEND_BASE_URL must start with http:// or https://",
+            ):
+                Settings()
 
     def test_database_connect_timeout_must_be_positive(self) -> None:
         env = self.base_env | {"ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS": "0"}
