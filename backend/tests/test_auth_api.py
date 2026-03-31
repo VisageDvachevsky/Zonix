@@ -197,6 +197,35 @@ class AuthApiTests(unittest.TestCase):
         actions = [item["action"] for item in audit_response.json()["items"]]
         self.assertIn("login.failed", actions)
 
+    def test_login_rate_limit_returns_429_after_repeated_failures(self) -> None:
+        for _ in range(5):
+            response = self.client.post(
+                "/auth/login",
+                json={"username": "admin", "password": "wrong"},
+            )
+            self.assertEqual(response.status_code, 401)
+
+        throttled_response = self.client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "wrong"},
+        )
+
+        self.assertEqual(throttled_response.status_code, 429)
+        self.assertEqual(throttled_response.json()["detail"], "too many login attempts")
+        self.assertIn("Retry-After", throttled_response.headers)
+
+    def test_request_body_limit_rejects_oversized_login_payload(self) -> None:
+        response = self.client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "x" * 70000},
+        )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(
+            response.json()["detail"],
+            "request body exceeds configured size limit",
+        )
+
     def test_logout_clears_session_cookie(self) -> None:
         self.client.post(
             "/auth/login",

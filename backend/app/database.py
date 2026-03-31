@@ -20,7 +20,10 @@ def _import_psycopg() -> Any:
 def connect(database_url: str | None = None) -> Iterator[Any]:
     psycopg = _import_psycopg()
 
-    with psycopg.connect(database_url or settings.database_url) as connection:
+    with psycopg.connect(
+        database_url or settings.database_url,
+        connect_timeout=settings.database_connect_timeout_seconds,
+    ) as connection:
         yield connection
 
 

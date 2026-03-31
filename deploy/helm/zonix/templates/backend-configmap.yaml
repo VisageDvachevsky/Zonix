@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "zonix.fullname" . }}-backend-config
+  labels:
+    {{- include "zonix.labels" . | nindent 4 }}
+data:
+  ZONIX_ENV: {{ .Values.backend.env.environment | quote }}
+  ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS: {{ .Values.backend.env.databaseConnectTimeoutSeconds | quote }}
+  ZONIX_BOOTSTRAP_ADMIN_ENABLED: {{ .Values.backend.env.bootstrapAdminEnabled | quote }}
+  ZONIX_BOOTSTRAP_ADMIN_USERNAME: {{ .Values.backend.env.bootstrapAdminUsername | quote }}
+  ZONIX_BOOTSTRAP_USERS_JSON: {{ .Values.backend.env.bootstrapUsersJson | quote }}
+  ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON: {{ .Values.backend.env.bootstrapZoneGrantsJson | quote }}
+  ZONIX_SESSION_COOKIE_SAMESITE: {{ .Values.backend.env.sessionCookieSameSite | quote }}
+  ZONIX_SESSION_COOKIE_SECURE: {{ .Values.backend.env.sessionCookieSecure | quote }}
+  ZONIX_SESSION_TTL_SECONDS: {{ .Values.backend.env.sessionTtlSeconds | quote }}
+  ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED: {{ .Values.backend.env.authOidcSelfSignupEnabled | quote }}
+  ZONIX_OIDC_BOOTSTRAP_NAME: {{ .Values.backend.env.oidcBootstrapName | quote }}
+  ZONIX_OIDC_BOOTSTRAP_ISSUER: {{ .Values.backend.env.oidcBootstrapIssuer | quote }}
+  ZONIX_OIDC_BOOTSTRAP_CLIENT_ID: {{ .Values.backend.env.oidcBootstrapClientId | quote }}
+  ZONIX_OIDC_BOOTSTRAP_SCOPES: {{ .Values.backend.env.oidcBootstrapScopes | quote }}
+  ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES: {{ .Values.backend.env.oidcBootstrapClaimsMappingRules | quote }}
+  ZONIX_POWERDNS_BACKEND_ENABLED: {{ .Values.backend.env.powerdnsBackendEnabled | quote }}
+  ZONIX_POWERDNS_BACKEND_NAME: {{ .Values.backend.env.powerdnsBackendName | quote }}
+  ZONIX_POWERDNS_API_URL: {{ .Values.backend.env.powerdnsApiUrl | quote }}
+  ZONIX_POWERDNS_SERVER_ID: {{ .Values.backend.env.powerdnsServerId | quote }}
+  ZONIX_POWERDNS_TIMEOUT_SECONDS: {{ .Values.backend.env.powerdnsTimeoutSeconds | quote }}
+  ZONIX_BIND_BACKEND_ENABLED: {{ .Values.backend.env.bindBackendEnabled | quote }}
+  ZONIX_BIND_BACKEND_NAME: {{ .Values.backend.env.bindBackendName | quote }}
+  ZONIX_BIND_SERVER_HOST: {{ .Values.backend.env.bindServerHost | quote }}
+  ZONIX_BIND_SERVER_PORT: {{ .Values.backend.env.bindServerPort | quote }}
+  ZONIX_BIND_TIMEOUT_SECONDS: {{ .Values.backend.env.bindTimeoutSeconds | quote }}
+  ZONIX_BIND_AXFR_ENABLED: {{ .Values.backend.env.bindAxfrEnabled | quote }}
+  ZONIX_BIND_TSIG_KEY_NAME: {{ .Values.backend.env.bindTsigKeyName | quote }}
+  ZONIX_BIND_TSIG_ALGORITHM: {{ .Values.backend.env.bindTsigAlgorithm | quote }}
+  ZONIX_BIND_ZONE_NAMES: {{ .Values.backend.env.bindZoneNames | quote }}
+  ZONIX_BIND_SNAPSHOT_FILE_MAP: {{ .Values.backend.env.bindSnapshotFileMap | quote }}

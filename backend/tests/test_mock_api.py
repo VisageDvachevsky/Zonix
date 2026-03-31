@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ from app.auth import AuthService, InMemoryUserRepository, SessionManager
 from app.domain.models import Backend, BackendCapability, RecordSet, Role, User, Zone, ZoneAction
 from app.identity_providers import IdentityProviderService, InMemoryIdentityProviderRepository
 from app.main import create_app
+from app.observability import REQUEST_LOGGER_NAME
 from app.security import hash_password
 from app.zone_reads import ZoneReadService
 
@@ -230,6 +232,64 @@ class MockApiTests(unittest.TestCase):
         self.assertEqual(zones_response.status_code, 401)
         self.assertEqual(zone_response.status_code, 401)
         self.assertEqual(records_response.status_code, 401)
+
+    def test_health_and_ready_expose_operational_state(self) -> None:
+        health_response = self.client.get("/health")
+        ready_response = self.client.get("/ready")
+
+        self.assertEqual(health_response.status_code, 200)
+        self.assertEqual(health_response.json()["status"], "ok")
+        self.assertIn("environment", health_response.json())
+        self.assertEqual(ready_response.status_code, 200)
+        self.assertIn(ready_response.json()["status"], {"ok", "degraded"})
+        self.assertIn("database", ready_response.json())
+
+    def test_security_headers_are_present_on_api_responses(self) -> None:
+        response = self.client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["x-frame-options"], "DENY")
+        self.assertEqual(response.headers["referrer-policy"], "no-referrer")
+        self.assertIn("fullscreen=(self)", response.headers["permissions-policy"])
+        self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_trusted_host_middleware_rejects_unexpected_host_header(self) -> None:
+        response = self.client.get("/health", headers={"host": "evil.example"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.text, "Invalid host header")
+
+    def test_metrics_endpoint_exposes_basic_prometheus_counters(self) -> None:
+        self.client.get("/health")
+        self.client.get("/backends")
+
+        metrics_response = self.client.get("/metrics")
+
+        self.assertEqual(metrics_response.status_code, 200)
+        self.assertIn(
+            "text/plain; version=0.0.4",
+            metrics_response.headers["content-type"],
+        )
+        metrics_text = metrics_response.text
+        self.assertIn("zonix_build_info", metrics_text)
+        self.assertIn("zonix_http_requests_total", metrics_text)
+        self.assertIn('path="/health"', metrics_text)
+        self.assertIn('path="/backends"', metrics_text)
+
+    def test_request_logging_emits_structured_http_events(self) -> None:
+        with self.assertLogs(REQUEST_LOGGER_NAME, level="INFO") as captured_logs:
+            response = self.client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(captured_logs.records), 1)
+        payload = json.loads(captured_logs.records[0].getMessage())
+        self.assertEqual(payload["event"], "http_request")
+        self.assertEqual(payload["method"], "GET")
+        self.assertEqual(payload["path"], "/health")
+        self.assertEqual(payload["route"], "/health")
+        self.assertEqual(payload["status_code"], 200)
+        self.assertGreaterEqual(payload["duration_ms"], 0)
 
     def test_admin_sees_all_mock_backends_and_zones(self) -> None:
         self.client.post("/auth/login", json={"username": "admin", "password": "admin"})

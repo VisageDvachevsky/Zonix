@@ -1,10 +1,15 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-async function fulfillJson(route: Route, body: unknown) {
+async function fulfillJson(
+  route: Route,
+  body: unknown,
+  headers?: Record<string, string>,
+) {
   await route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify(body),
+    headers,
   });
 }
 
@@ -40,6 +45,7 @@ async function mockApi(page: Page) {
     fulfillJson(route, {
       authenticated,
       user: authenticated ? { username: "admin", role: "admin" } : null,
+      csrfToken: authenticated ? "test-csrf-token" : null,
     }),
   );
 
@@ -48,6 +54,9 @@ async function mockApi(page: Page) {
     await fulfillJson(route, {
       authenticated: true,
       user: { username: "admin", role: "admin" },
+      csrfToken: "test-csrf-token",
+    }, {
+      "set-cookie": "zonix_csrf_token=test-csrf-token; Path=/; SameSite=Lax",
     });
   });
 
@@ -103,7 +112,7 @@ async function mockApi(page: Page) {
     }),
   );
 
-  await page.route("**/api/audit-events?limit=250", (route) =>
+  await page.route("**/api/audit?limit=250", (route) =>
     fulfillJson(route, {
       items: [
         {
@@ -127,7 +136,7 @@ async function mockApi(page: Page) {
     }),
   );
 
-  await page.route("**/api/admin/grants/zones?username=alice", (route) =>
+  await page.route("**/api/admin/grants/alice", (route) =>
     fulfillJson(route, {
       items: [{ username: "alice", zoneName: "example.com", actions: ["read", "write"] }],
     }),

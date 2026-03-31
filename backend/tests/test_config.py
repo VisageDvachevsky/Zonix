@@ -11,6 +11,7 @@ class SettingsTests(unittest.TestCase):
             "ZONIX_APP_VERSION": "0.1.0",
             "ZONIX_ENV": "development",
             "ZONIX_DATABASE_URL": "postgresql://zonix:zonix@127.0.0.1:55432/zonix",
+            "ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS": "2",
             "ZONIX_BOOTSTRAP_ADMIN_USERNAME": "admin",
             "ZONIX_BOOTSTRAP_ADMIN_PASSWORD": "local-dev-admin-change-me",
             "ZONIX_SESSION_COOKIE_NAME": "zonix_session",
@@ -37,7 +38,7 @@ class SettingsTests(unittest.TestCase):
     def test_production_requires_non_default_bootstrap_password(self) -> None:
         env = self.base_env | {
             "ZONIX_ENV": "production",
-            "ZONIX_SESSION_SECRET_KEY": "real-secret",
+            "ZONIX_SESSION_SECRET_KEY": "real-secret-that-is-at-least-32-characters-long",
         }
 
         with patch.dict(os.environ, env, clear=True):
@@ -63,6 +64,55 @@ class SettingsTests(unittest.TestCase):
             settings.database_url,
             "postgresql://zonix:zonix@127.0.0.1:55432/zonix",
         )
+        self.assertEqual(settings.database_connect_timeout_seconds, 2)
+
+    def test_database_connect_timeout_must_be_positive(self) -> None:
+        env = self.base_env | {"ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS": "0"}
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS must be positive",
+            ):
+                Settings()
+
+    def test_request_max_body_bytes_must_be_positive(self) -> None:
+        env = self.base_env | {"ZONIX_REQUEST_MAX_BODY_BYTES": "0"}
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_REQUEST_MAX_BODY_BYTES must be positive",
+            ):
+                Settings()
+
+    def test_login_rate_limit_attempts_must_be_positive(self) -> None:
+        env = self.base_env | {"ZONIX_LOGIN_RATE_LIMIT_ATTEMPTS": "0"}
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_LOGIN_RATE_LIMIT_ATTEMPTS must be positive",
+            ):
+                Settings()
+
+    def test_session_secret_must_be_long_enough(self) -> None:
+        env = self.base_env | {"ZONIX_SESSION_SECRET_KEY": "too-short"}
+
+        with patch.dict(os.environ, env, clear=True):
+            from app.config import Settings
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "ZONIX_SESSION_SECRET_KEY must be at least 32 characters long",
+            ):
+                Settings()
 
     def test_same_site_none_requires_secure_cookie(self) -> None:
         env = self.base_env | {

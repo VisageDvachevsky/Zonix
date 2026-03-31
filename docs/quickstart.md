@@ -1,5 +1,12 @@
 # Zonix Quickstart
 
+Related docs:
+
+- [Architecture](./architecture.md)
+- [Auth modes](./auth-modes.md)
+- [Backend adapters](./backend-adapters.md)
+- [API examples](./api-examples.md)
+
 ## Prerequisites
 
 - Docker Desktop or Docker Engine with Compose
@@ -23,6 +30,31 @@ This starts:
 - Vite frontend on `localhost:5173`
 
 The backend container runs SQL migrations, provisions deterministic demo users, and bootstraps a deterministic OIDC provider configuration on startup.
+The stack now reads its demo defaults from `deploy/demo.env`, so the compose file stays readable and the environment can be copied or adjusted without editing YAML first.
+If any of the host ports are already occupied, change the `ZONIX_HOST_*_PORT` values in `deploy/demo.env` and rerun the same command.
+
+After the containers report healthy, run:
+
+```bash
+npm run compose:verify
+```
+
+This checks `health`, `ready`, `metrics`, the bootstrap admin login, and a protected zone listing through the demo stack.
+The current demo stack also includes the Day 47 performance pass: non-admin zone/backend reads and audit visibility now use indexed database lookups instead of loading full inventories into Python first.
+
+## Screenshots
+
+Zone inventory:
+
+![Zone inventory](./screenshots/zones.png)
+
+Zone detail:
+
+![Zone detail](./screenshots/zone-detail.png)
+
+Audit log:
+
+![Audit log](./screenshots/audit-log.png)
 
 ## Optional BIND lab
 
@@ -123,7 +155,8 @@ Browser passwords for the demo realm:
 
 Override them before exposing the stack anywhere outside your workstation. The local compose file and [`deploy/.env.example`](../deploy/.env.example) now use explicit development-only placeholders instead of `admin` / static session defaults baked into the backend.
 
-The backend reads `ZONIX_ENV`, `ZONIX_DATABASE_URL`, `ZONIX_BOOTSTRAP_ADMIN_ENABLED`, `ZONIX_BOOTSTRAP_ADMIN_USERNAME`, `ZONIX_BOOTSTRAP_ADMIN_PASSWORD`, `ZONIX_BOOTSTRAP_USERS_JSON`, `ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON`, `ZONIX_SESSION_SECRET_KEY`, `ZONIX_SESSION_COOKIE_SAMESITE`, `ZONIX_SESSION_COOKIE_SECURE`, `ZONIX_SESSION_TTL_SECONDS`, `ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED`, `ZONIX_OIDC_BOOTSTRAP_NAME`, `ZONIX_OIDC_BOOTSTRAP_ISSUER`, `ZONIX_OIDC_BOOTSTRAP_CLIENT_ID`, `ZONIX_OIDC_BOOTSTRAP_CLIENT_SECRET`, `ZONIX_OIDC_BOOTSTRAP_SCOPES`, `ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES`, `ZONIX_POWERDNS_BACKEND_NAME`, `ZONIX_POWERDNS_API_URL`, `ZONIX_POWERDNS_API_KEY`, `ZONIX_POWERDNS_SERVER_ID`, and `ZONIX_POWERDNS_TIMEOUT_SECONDS`.
+The backend reads `ZONIX_ENV`, `ZONIX_DATABASE_URL`, `ZONIX_BOOTSTRAP_ADMIN_ENABLED`, `ZONIX_BOOTSTRAP_ADMIN_USERNAME`, `ZONIX_BOOTSTRAP_ADMIN_PASSWORD`, `ZONIX_BOOTSTRAP_USERS_JSON`, `ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON`, `ZONIX_SESSION_SECRET_KEY`, `ZONIX_SESSION_COOKIE_SAMESITE`, `ZONIX_SESSION_COOKIE_SECURE`, `ZONIX_SESSION_TTL_SECONDS`, `ZONIX_ALLOWED_HOSTS`, `ZONIX_SECURITY_HEADERS_ENABLED`, `ZONIX_SECURITY_HEADERS_PERMISSIONS_POLICY`, `ZONIX_REQUEST_MAX_BODY_BYTES`, `ZONIX_LOGIN_RATE_LIMIT_ATTEMPTS`, `ZONIX_LOGIN_RATE_LIMIT_WINDOW_SECONDS`, `ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED`, `ZONIX_OIDC_BOOTSTRAP_NAME`, `ZONIX_OIDC_BOOTSTRAP_ISSUER`, `ZONIX_OIDC_BOOTSTRAP_CLIENT_ID`, `ZONIX_OIDC_BOOTSTRAP_CLIENT_SECRET`, `ZONIX_OIDC_BOOTSTRAP_SCOPES`, `ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES`, `ZONIX_POWERDNS_BACKEND_NAME`, `ZONIX_POWERDNS_API_URL`, `ZONIX_POWERDNS_API_KEY`, `ZONIX_POWERDNS_SERVER_ID`, and `ZONIX_POWERDNS_TIMEOUT_SECONDS`.
+Compose demo defaults for those values live in `deploy/demo.env`, while `deploy/.env.example` remains the template for non-compose or custom local runs.
 
 Day 20 hardening defaults in the demo stack:
 
@@ -131,6 +164,13 @@ Day 20 hardening defaults in the demo stack:
 - cookie-authenticated write requests require CSRF
 - session cookies default to `SameSite=lax`
 - OIDC self-signup is disabled by default until richer user provisioning UX lands
+
+Day 46 hardening defaults in the demo stack:
+
+- backend rejects unexpected `Host` headers outside `ZONIX_ALLOWED_HOSTS`
+- API responses include `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and `Cache-Control: no-store`
+- write requests over `ZONIX_REQUEST_MAX_BODY_BYTES` fail with `413`
+- repeated bad logins are throttled with `429` after `ZONIX_LOGIN_RATE_LIMIT_ATTEMPTS` within `ZONIX_LOGIN_RATE_LIMIT_WINDOW_SECONDS`
 
 ## Local-only workflows without Docker
 
@@ -167,6 +207,7 @@ If you are using the Docker stack, do not run `npm run dev:backend` at the same 
 
 - `GET http://localhost:8000/health`
 - `GET http://localhost:8000/ready`
+- `GET http://localhost:8000/metrics`
 - `POST http://localhost:8000/auth/login` with `{"username":"admin","password":"local-dev-admin-change-me"}`
 - `GET http://localhost:8000/auth/me` after login cookie is set
 - `GET http://localhost:8000/backends` after login

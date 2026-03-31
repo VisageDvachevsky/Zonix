@@ -64,12 +64,33 @@ class InMemoryAuditCursor:
         if normalized.startswith(
             "SELECT actor, action, zone_name, backend_name, payload, created_at FROM audit_events"
         ):
-            limit = int(arguments[0])
             ordered = sorted(
                 self.connection.events,
                 key=lambda item: item["created_at"],
                 reverse=True,
-            )[:limit]
+            )
+
+            if "WHERE actor = %s OR zone_name = ANY(%s)" in normalized:
+                actor = str(arguments[0])
+                zone_names = {str(item) for item in arguments[1]}
+                limit = int(arguments[2])
+                ordered = [
+                    item
+                    for item in ordered
+                    if item["actor"] == actor
+                    or (
+                        item["zone_name"] is not None
+                        and str(item["zone_name"]) in zone_names
+                    )
+                ][:limit]
+            elif "WHERE actor = %s" in normalized:
+                actor = str(arguments[0])
+                limit = int(arguments[1])
+                ordered = [item for item in ordered if item["actor"] == actor][:limit]
+            else:
+                limit = int(arguments[0])
+                ordered = ordered[:limit]
+
             self._rows = [
                 (
                     item["actor"],
@@ -178,6 +199,47 @@ class DatabaseAuditEventRepositoryTests(unittest.TestCase):
         self.assertEqual(events[0].payload["recordType"], "A")
         self.assertEqual(events[0].created_at, created_at)
         self.assertEqual(connection.commit_count, 1)
+
+    def test_repository_filters_visible_events_by_actor_or_zone(self) -> None:
+        connection = InMemoryAuditConnection()
+
+        def connect_stub(_database_url: str | None = None) -> InMemoryAuditConnection:
+            return connection
+
+        repository = DatabaseAuditEventRepository("postgresql://test", connect_fn=connect_stub)
+        repository.add(
+            AuditEvent(
+                actor="admin",
+                action="record.updated",
+                zone_name="lab.example",
+                backend_name="bind-lab",
+                created_at=datetime(2026, 3, 27, 12, 0, tzinfo=UTC),
+            )
+        )
+        repository.add(
+            AuditEvent(
+                actor="alice",
+                action="login.success",
+                created_at=datetime(2026, 3, 27, 12, 5, tzinfo=UTC),
+            )
+        )
+        repository.add(
+            AuditEvent(
+                actor="carol",
+                action="record.deleted",
+                zone_name="secret.example",
+                backend_name="powerdns-local",
+                created_at=datetime(2026, 3, 27, 12, 10, tzinfo=UTC),
+            )
+        )
+
+        events = repository.list_visible_for_user(
+            username="alice",
+            zone_names=("lab.example",),
+            limit=10,
+        )
+
+        self.assertEqual([event.action for event in events], ["login.success", "record.updated"])
 
 
 if __name__ == "__main__":

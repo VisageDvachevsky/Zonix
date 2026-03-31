@@ -60,6 +60,14 @@ def _load_allowed_web_origins() -> tuple[str, ...]:
     return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
 
 
+def _load_allowed_hosts() -> tuple[str, ...]:
+    raw = getenv(
+        "ZONIX_ALLOWED_HOSTS",
+        "localhost,127.0.0.1,testserver,backend",
+    )
+    return tuple(host.strip() for host in raw.split(",") if host.strip())
+
+
 def _load_bind_snapshot_file_map() -> dict[str, str]:
     raw = getenv("ZONIX_BIND_SNAPSHOT_FILE_MAP", "{}")
     payload = loads(raw)
@@ -86,6 +94,9 @@ class Settings:
             "ZONIX_DATABASE_URL",
             "postgresql://zonix:zonix@127.0.0.1:55432/zonix",
         )
+    )
+    database_connect_timeout_seconds: int = field(
+        default_factory=lambda: int(getenv("ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS", "2"))
     )
     bootstrap_admin_username: str = field(
         default_factory=lambda: getenv("ZONIX_BOOTSTRAP_ADMIN_USERNAME", "admin")
@@ -115,6 +126,27 @@ class Settings:
         default_factory=lambda: getenv("ZONIX_SESSION_COOKIE_PATH", "/")
     )
     allowed_web_origins: tuple[str, ...] = field(default_factory=_load_allowed_web_origins)
+    allowed_hosts: tuple[str, ...] = field(default_factory=_load_allowed_hosts)
+    security_headers_enabled: bool = field(
+        default_factory=lambda: env_flag("ZONIX_SECURITY_HEADERS_ENABLED", True)
+    )
+    security_headers_permissions_policy: str = field(
+        default_factory=lambda: getenv(
+            "ZONIX_SECURITY_HEADERS_PERMISSIONS_POLICY",
+            "accelerometer=(), autoplay=(), camera=(), display-capture=(), "
+            "fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), "
+            "microphone=(), payment=(), publickey-credentials-get=(), usb=()",
+        )
+    )
+    request_max_body_bytes: int = field(
+        default_factory=lambda: int(getenv("ZONIX_REQUEST_MAX_BODY_BYTES", "65536"))
+    )
+    login_rate_limit_attempts: int = field(
+        default_factory=lambda: int(getenv("ZONIX_LOGIN_RATE_LIMIT_ATTEMPTS", "5"))
+    )
+    login_rate_limit_window_seconds: int = field(
+        default_factory=lambda: int(getenv("ZONIX_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60"))
+    )
     session_secret_key: str = field(
         default_factory=lambda: getenv(
             "ZONIX_SESSION_SECRET_KEY",
@@ -214,8 +246,20 @@ class Settings:
             raise ValueError("ZONIX_SESSION_COOKIE_PATH must start with /")
         if not self.allowed_web_origins:
             raise ValueError("ZONIX_ALLOWED_WEB_ORIGINS must define at least one origin")
+        if not self.allowed_hosts:
+            raise ValueError("ZONIX_ALLOWED_HOSTS must define at least one host")
+        if self.database_connect_timeout_seconds <= 0:
+            raise ValueError("ZONIX_DATABASE_CONNECT_TIMEOUT_SECONDS must be positive")
+        if self.request_max_body_bytes <= 0:
+            raise ValueError("ZONIX_REQUEST_MAX_BODY_BYTES must be positive")
+        if self.login_rate_limit_attempts <= 0:
+            raise ValueError("ZONIX_LOGIN_RATE_LIMIT_ATTEMPTS must be positive")
+        if self.login_rate_limit_window_seconds <= 0:
+            raise ValueError("ZONIX_LOGIN_RATE_LIMIT_WINDOW_SECONDS must be positive")
         if self.session_ttl_seconds <= 0:
             raise ValueError("ZONIX_SESSION_TTL_SECONDS must be positive")
+        if len(self.session_secret_key) < 32:
+            raise ValueError("ZONIX_SESSION_SECRET_KEY must be at least 32 characters long")
         if self.powerdns_backend_enabled:
             if not self.powerdns_backend_name:
                 raise ValueError("ZONIX_POWERDNS_BACKEND_NAME must not be empty")

@@ -78,6 +78,21 @@ class InMemoryAccessCursor:
             ]
             return
 
+        if normalized.startswith(
+            "SELECT name, backend_type, capabilities FROM backends "
+            "WHERE name = ANY(%s) ORDER BY name"
+        ):
+            selected_names = {str(item) for item in arguments[0]}
+            self._rows = [
+                (backend["name"], backend["backend_type"], backend["capabilities"])
+                for backend in sorted(
+                    self.connection.backends.values(),
+                    key=lambda item: item["name"],
+                )
+                if backend["name"] in selected_names
+            ]
+            return
+
         if normalized.startswith("INSERT INTO zones"):
             name, backend_name = arguments
             self.connection.zones[str(name)] = {
@@ -117,6 +132,17 @@ class InMemoryAccessCursor:
             self._rows = [
                 (zone["name"], zone["backend_name"])
                 for zone in sorted(self.connection.zones.values(), key=lambda item: item["name"])
+            ]
+            return
+
+        if normalized.startswith(
+            "SELECT name, backend_name FROM zones WHERE name = ANY(%s) ORDER BY name"
+        ):
+            selected_names = {str(item) for item in arguments[0]}
+            self._rows = [
+                (zone["name"], zone["backend_name"])
+                for zone in sorted(self.connection.zones.values(), key=lambda item: item["name"])
+                if zone["name"] in selected_names
             ]
             return
 
@@ -191,6 +217,30 @@ class DatabaseAccessRepositoriesTests(unittest.TestCase):
         self.assertEqual(backend.capabilities, (BackendCapability.READ_ZONES,))
         self.assertEqual([item.name for item in listed], ["powerdns-local"])
         self.assertGreaterEqual(self.connection.commit_count, 2)
+
+    def test_repository_list_by_names_returns_sorted_subset(self) -> None:
+        self.backends.add(
+            Backend(
+                name="bind-lab",
+                backend_type="rfc2136-bind",
+                capabilities=(BackendCapability.READ_ZONES,),
+            )
+        )
+        self.backends.add(
+            Backend(
+                name="powerdns-local",
+                backend_type="powerdns",
+                capabilities=(BackendCapability.READ_ZONES,),
+            )
+        )
+        self.zones.add(Zone(name="example.com", backend_name="powerdns-local"))
+        self.zones.add(Zone(name="lab.example", backend_name="bind-lab"))
+
+        backends = self.backends.list_by_names({"powerdns-local"})
+        zones = self.zones.list_by_names({"lab.example", "missing.example"})
+
+        self.assertEqual([backend.name for backend in backends], ["powerdns-local"])
+        self.assertEqual([zone.name for zone in zones], ["lab.example"])
 
     def test_zone_repository_replace_for_backend_prunes_stale_zones(self) -> None:
         self.zones.add(Zone(name="old.example", backend_name="powerdns-local"))

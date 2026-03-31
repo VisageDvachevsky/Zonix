@@ -481,6 +481,10 @@ function readCookie(name: string) {
   return null;
 }
 
+export function hasCookie(name: string) {
+  return readCookie(name) !== null;
+}
+
 function persistCsrfToken(token: string | null | undefined) {
   csrfTokenMemory = token ?? null;
 }
@@ -510,11 +514,20 @@ async function unwrapGeneratedResponse<T>(
   }>,
   fallbackMessage: string,
   schema?: z.ZodType<T>,
+  options?: {
+    allowEmptyResponse?: boolean;
+  },
 ): Promise<T> {
   const { data, error, response } = await request;
-  if (!response.ok || data === undefined) {
+  if (!response.ok) {
     const detail = detailFromError(error);
     throw new Error(detail ?? `${fallbackMessage} with status ${response.status}`);
+  }
+  if (data === undefined) {
+    if (options?.allowEmptyResponse) {
+      return undefined as T;
+    }
+    throw new Error(`${fallbackMessage} with status ${response.status}`);
   }
   return schema ? schema.parse(data) : (data as T);
 }
@@ -1002,6 +1015,8 @@ export async function deleteZoneRecord(input: {
       body: payload,
     }),
     "Record delete failed",
+    undefined,
+    { allowEmptyResponse: true },
   );
 }
 

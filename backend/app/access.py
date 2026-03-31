@@ -26,6 +26,8 @@ class BackendRepository(Protocol):
 
     def list_all(self) -> tuple[Backend, ...]: ...
 
+    def list_by_names(self, names: Iterable[str]) -> tuple[Backend, ...]: ...
+
     def get_by_name(self, name: str) -> Backend | None: ...
 
     def delete(self, name: str) -> bool: ...
@@ -37,6 +39,8 @@ class ZoneRepository(Protocol):
     def replace_for_backend(self, backend_name: str, zones: Iterable[Zone]) -> tuple[Zone, ...]: ...
 
     def list_all(self) -> tuple[Zone, ...]: ...
+
+    def list_by_names(self, names: Iterable[str]) -> tuple[Zone, ...]: ...
 
     def get_by_name(self, name: str) -> Zone | None: ...
 
@@ -74,6 +78,19 @@ class InMemoryBackendRepository:
     def list_all(self) -> tuple[Backend, ...]:
         return tuple(sorted(self.backends.values(), key=lambda backend: backend.name))
 
+    def list_by_names(self, names: Iterable[str]) -> tuple[Backend, ...]:
+        selected_names = set(names)
+        return tuple(
+            sorted(
+                (
+                    backend
+                    for backend_name, backend in self.backends.items()
+                    if backend_name in selected_names
+                ),
+                key=lambda backend: backend.name,
+            )
+        )
+
     def get_by_name(self, name: str) -> Backend | None:
         return self.backends.get(name)
 
@@ -102,6 +119,15 @@ class InMemoryZoneRepository:
 
     def list_all(self) -> tuple[Zone, ...]:
         return tuple(sorted(self.zones.values(), key=lambda zone: zone.name))
+
+    def list_by_names(self, names: Iterable[str]) -> tuple[Zone, ...]:
+        selected_names = set(names)
+        return tuple(
+            sorted(
+                (zone for zone_name, zone in self.zones.items() if zone_name in selected_names),
+                key=lambda zone: zone.name,
+            )
+        )
 
     def get_by_name(self, name: str) -> Zone | None:
         return self.zones.get(name)
@@ -182,6 +208,26 @@ class DatabaseBackendRepository:
                     FROM backends
                     ORDER BY name
                     """
+                )
+                rows = cursor.fetchall()
+
+        return tuple(self._map_backend(row) for row in rows)
+
+    def list_by_names(self, names: Iterable[str]) -> tuple[Backend, ...]:
+        normalized_names = tuple(sorted({str(name) for name in names}))
+        if not normalized_names:
+            return ()
+
+        with self.connect_fn(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT name, backend_type, capabilities
+                    FROM backends
+                    WHERE name = ANY(%s)
+                    ORDER BY name
+                    """,
+                    (list(normalized_names),),
                 )
                 rows = cursor.fetchall()
 
@@ -301,6 +347,26 @@ class DatabaseZoneRepository:
                     FROM zones
                     ORDER BY name
                     """
+                )
+                rows = cursor.fetchall()
+
+        return tuple(Zone(name=str(row[0]), backend_name=str(row[1])) for row in rows)
+
+    def list_by_names(self, names: Iterable[str]) -> tuple[Zone, ...]:
+        normalized_names = tuple(sorted({str(name) for name in names}))
+        if not normalized_names:
+            return ()
+
+        with self.connect_fn(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT name, backend_name
+                    FROM zones
+                    WHERE name = ANY(%s)
+                    ORDER BY name
+                    """,
+                    (list(normalized_names),),
                 )
                 rows = cursor.fetchall()
 
@@ -469,33 +535,28 @@ class AccessService:
         return grant
 
     def list_accessible_zones(self, user: User) -> tuple[Zone, ...]:
-        zones = self.zone_repository.list_all()
         if user.role == Role.ADMIN:
-            return zones
+            return self.zone_repository.list_all()
 
         grants = self.grant_repository.list_for_user(user.username)
-        accessible_zones = [
-            zone
-            for zone in zones
+        accessible_zone_names = {
+            grant.zone_name
+            for grant in grants
             if self.policy_evaluator.is_zone_action_allowed(
                 user=user,
-                zone_name=zone.name,
+                zone_name=grant.zone_name,
                 action=ZoneAction.READ,
                 grants=grants,
             ).allowed
-        ]
-        return tuple(accessible_zones)
+        }
+        return self.zone_repository.list_by_names(accessible_zone_names)
 
     def list_accessible_backends(self, user: User) -> tuple[Backend, ...]:
         if user.role == Role.ADMIN:
             return self.backend_repository.list_all()
 
         accessible_backend_names = {zone.backend_name for zone in self.list_accessible_zones(user)}
-        return tuple(
-            backend
-            for backend in self.backend_repository.list_all()
-            if backend.name in accessible_backend_names
-        )
+        return self.backend_repository.list_by_names(accessible_backend_names)
 
     def list_zone_grants_for_user(self, username: str) -> tuple[PermissionGrant, ...]:
         return self.grant_repository.list_for_user(username)

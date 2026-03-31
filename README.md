@@ -9,11 +9,12 @@ Zonix is a DNS control plane for small infrastructure teams that need a safe UI 
 
 ## Current status
 
-The repository now covers the Day 1-20 milestone path:
+The repository now covers the MVP path through Day 49:
 
 - frozen v0.1 scope, domain model, and backend capability matrix
 - React/FastAPI monorepo with CI, lint, format, and repository guardrails
 - SQL migrations, bootstrap admin flow, and Docker Compose local stack
+- minimal Helm chart for frontend/backend deployment with explicit external dependency wiring
 - separate day-21-style BIND lab fixtures in Compose override form
 - reproducible bootstrap path for deterministic local demo users plus a local Keycloak-backed OIDC demo realm
 - policy enforcement across admin/editor/viewer roles
@@ -28,6 +29,10 @@ The repository now covers the Day 1-20 milestone path:
 - generic OIDC login start/callback flow with signed state, token exchange, userinfo resolution, session issuance, and browser redirect back into the frontend
 - OIDC claims/groups mapping into global role and zone-level grants during callback
 - hardened auth defaults with explicit session cookie settings, CSRF-protected cookie auth, login failure/logout audit events, disabled OIDC self-signup by default, and deterministic bootstrap admin defaults for development
+- operational hardening with `/health`, `/ready`, `/metrics`, structured request logging, strict security response headers, trusted host validation, request body size limits, and login rate limiting
+- performance-oriented backend reads for non-admin zone/backend discovery and audit visibility, backed by targeted Postgres indexes for the hot day-31-to-day-47 flows
+- release-facing artifacts for the RC phase: release notes, upgrade notes, and known limitations
+- live Playwright coverage for local login, OIDC login, zone navigation, record edit flows, and audit visibility on the main release path
 
 What is still intentionally incomplete:
 
@@ -42,6 +47,17 @@ What is still intentionally incomplete:
 - `docs/` - PRD, architecture notes, quickstart
 - `deploy/` - local and demo deployment assets
 - `tests/` - repository-level TDD guardrails
+
+## Documentation
+
+- [`docs/quickstart.md`](docs/quickstart.md)
+- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/auth-modes.md`](docs/auth-modes.md)
+- [`docs/backend-adapters.md`](docs/backend-adapters.md)
+- [`docs/api-examples.md`](docs/api-examples.md)
+- [`docs/release-notes-v0.1.0-rc1.md`](docs/release-notes-v0.1.0-rc1.md)
+- [`docs/upgrade-notes-v0.1.0-rc1.md`](docs/upgrade-notes-v0.1.0-rc1.md)
+- [`docs/known-limitations-v0.1.0-rc1.md`](docs/known-limitations-v0.1.0-rc1.md)
 
 ## Development
 

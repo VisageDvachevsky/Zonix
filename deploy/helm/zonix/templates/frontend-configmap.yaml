@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "zonix.fullname" . }}-frontend-config
+  labels:
+    {{- include "zonix.labels" . | nindent 4 }}
+data:
+  ZONIX_DEV_PROXY_TARGET: http://{{ include "zonix.fullname" . }}-backend:{{ .Values.backend.service.port }}

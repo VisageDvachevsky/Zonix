@@ -32,6 +32,7 @@ import {
   fetchHealth,
   fetchOidcProviders,
   fetchSession,
+  hasCookie,
   fetchZone,
   fetchZoneRecords,
   fetchZones,
@@ -999,6 +1000,7 @@ export function App() {
   const sessionQuery = useQuery({
     queryKey: ["session"],
     queryFn: fetchSession,
+    enabled: authSettingsQuery.isSuccess && hasCookie("zonix_csrf_token"),
     retry: false,
   });
 
@@ -1094,6 +1096,7 @@ export function App() {
   const logoutMutation = useMutation({
     mutationFn: logout,
     onSuccess: async (nextSession) => {
+      await queryClient.cancelQueries({ queryKey: ["session"] });
       queryClient.setQueryData(["session"], nextSession);
       for (const key of [
         "backends",
@@ -1111,9 +1114,9 @@ export function App() {
       setSelectedRecordKeys([]);
       setEditorState(null);
       setPreviewState(null);
+      setPassword("");
       navigate({ kind: "zones" });
       pushNotification("info", "Signed out", "The active session has been closed.");
-      await queryClient.invalidateQueries({ queryKey: ["session"] });
     },
   });
   const oidcLoginMutation = useMutation({

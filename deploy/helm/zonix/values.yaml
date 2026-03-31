@@ -1,0 +1,81 @@
+nameOverride: ""
+fullnameOverride: ""
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: zonix/frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5173
+  resources: {}
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: zonix.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+backend:
+  replicaCount: 1
+  image:
+    repository: zonix/backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources: {}
+  probes:
+    readinessPath: /ready
+    livenessPath: /health
+    metricsPath: /metrics
+  env:
+    environment: development
+    databaseConnectTimeoutSeconds: 2
+    bootstrapAdminEnabled: true
+    bootstrapAdminUsername: admin
+    bootstrapUsersJson: '[{"username":"alice","password":"editor","role":"editor","authSource":"local"},{"username":"bob","password":"viewer","role":"viewer","authSource":"local"}]'
+    bootstrapZoneGrantsJson: '[{"username":"alice","zoneName":"example.com","actions":["write"]},{"username":"bob","zoneName":"internal.example","actions":["read"]}]'
+    sessionCookieSameSite: lax
+    sessionCookieSecure: false
+    sessionTtlSeconds: 43200
+    authOidcSelfSignupEnabled: false
+    oidcBootstrapName: corp-oidc
+    oidcBootstrapIssuer: https://oidc.example.com/realms/zonix
+    oidcBootstrapClientId: zonix-ui
+    oidcBootstrapScopes: openid,groups
+    oidcBootstrapClaimsMappingRules: '{"usernameClaim":"preferred_username","rolesClaim":"groups","adminGroups":["dns-admins"],"zoneEditorPattern":"zone-{zone}-editors","zoneViewerPattern":"zone-{zone}-viewers"}'
+    powerdnsBackendEnabled: true
+    powerdnsBackendName: powerdns-local
+    powerdnsApiUrl: http://powerdns.default.svc.cluster.local:8081
+    powerdnsServerId: localhost
+    powerdnsTimeoutSeconds: 5
+    bindBackendEnabled: false
+    bindBackendName: bind-lab
+    bindServerHost: bind.default.svc.cluster.local
+    bindServerPort: 53
+    bindTimeoutSeconds: 5
+    bindAxfrEnabled: true
+    bindTsigKeyName: ""
+    bindTsigAlgorithm: hmac-sha256
+    bindZoneNames: ""
+    bindSnapshotFileMap: "{}"
+  secretEnv:
+    databaseUrl: postgresql://zonix:zonix@postgresql.default.svc.cluster.local:5432/zonix
+    bootstrapAdminPassword: local-dev-admin-change-me
+    sessionSecretKey: local-dev-session-secret-change-me-32-bytes
+    oidcBootstrapClientSecret: super-secret
+    powerdnsApiKey: zonix-dev-powerdns-key
+    bindTsigSecret: ""
+
+serviceAccount:
+  create: false
+  annotations: {}
+  name: ""

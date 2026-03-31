@@ -6,9 +6,15 @@ services:
       POSTGRES_USER: zonix
       POSTGRES_PASSWORD: zonix
     ports:
-      - "55432:5432"
+      - "${ZONIX_HOST_POSTGRES_PORT:-55432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zonix -d zonix"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
 
   powerdns-db:
     image: mariadb:11
@@ -20,6 +26,12 @@ services:
     volumes:
       - ./powerdns/init/mysql:/docker-entrypoint-initdb.d:ro
       - powerdns_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -ppowerdns-root --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   powerdns:
     image: powerdns/pdns-auth-49:latest
@@ -29,11 +41,12 @@ services:
     command:
       - -eu
     depends_on:
-      - powerdns-db
+      powerdns-db:
+        condition: service_healthy
     ports:
-      - "8081:8081"
-      - "5300:5300/tcp"
-      - "5300:5300/udp"
+      - "${ZONIX_HOST_POWERDNS_API_PORT:-8081}:8081"
+      - "${ZONIX_HOST_POWERDNS_DNS_PORT:-5300}:5300/tcp"
+      - "${ZONIX_HOST_POWERDNS_DNS_PORT:-5300}:5300/udp"
     volumes:
       - ./powerdns/config:/etc/pdns-zonix:ro
       - ./powerdns/zones:/etc/pdns-zones:ro
@@ -53,6 +66,8 @@ services:
       - --import-realm
     volumes:
       - ./keycloak/zonix-realm.json:/opt/keycloak/data/import/zonix-realm.json:ro
+    ports:
+      - "${ZONIX_HOST_KEYCLOAK_PORT:-9011}:8080"
 
   oidc-gateway:
     build:
@@ -64,59 +79,69 @@ services:
     depends_on:
       - keycloak
     ports:
-      - "9010:9000"
+      - "${ZONIX_HOST_OIDC_GATEWAY_PORT:-9010}:9000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from urllib.request import urlopen; urlopen('http://127.0.0.1:9000/realms/zonix/.well-known/openid-configuration', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   backend:
     build:
       context: ../backend
-    environment:
-      ZONIX_ENV: development
-      ZONIX_DATABASE_URL: postgresql://zonix:zonix@postgres:5432/zonix
-      ZONIX_BOOTSTRAP_ADMIN_ENABLED: "true"
-      ZONIX_BOOTSTRAP_ADMIN_USERNAME: admin
-      ZONIX_BOOTSTRAP_ADMIN_PASSWORD: local-dev-admin-change-me
-      ZONIX_SESSION_SECRET_KEY: local-dev-session-secret-change-me-32-bytes
-      ZONIX_SESSION_COOKIE_SAMESITE: lax
-      ZONIX_SESSION_COOKIE_SECURE: "false"
-      ZONIX_SESSION_TTL_SECONDS: 43200
-      ZONIX_AUTH_OIDC_SELF_SIGNUP_ENABLED: "false"
-      ZONIX_BOOTSTRAP_USERS_JSON: >-
-        [{"username":"alice","password":"editor","role":"editor","authSource":"local"},
-        {"username":"bob","password":"viewer","role":"viewer","authSource":"local"},
-        {"username":"oidc.admin","role":"admin","authSource":"oidc:corp-oidc"},
-        {"username":"oidc.editor","role":"editor","authSource":"oidc:corp-oidc"},
-        {"username":"oidc.viewer","role":"viewer","authSource":"oidc:corp-oidc"}]
-      ZONIX_BOOTSTRAP_ZONE_GRANTS_JSON: >-
-        [{"username":"alice","zoneName":"example.com","actions":["write"]},
-        {"username":"bob","zoneName":"internal.example","actions":["read"]}]
-      ZONIX_OIDC_BOOTSTRAP_NAME: corp-oidc
-      ZONIX_OIDC_BOOTSTRAP_ISSUER: http://oidc-gateway:9000/realms/zonix
-      ZONIX_OIDC_BOOTSTRAP_CLIENT_ID: zonix-ui
-      ZONIX_OIDC_BOOTSTRAP_CLIENT_SECRET: super-secret
-      ZONIX_OIDC_BOOTSTRAP_SCOPES: openid,groups
-      ZONIX_OIDC_BOOTSTRAP_CLAIMS_MAPPING_RULES: >-
-        {"usernameClaim":"preferred_username","rolesClaim":"groups","adminGroups":["dns-admins"],"zoneEditorPattern":"zone-{zone}-editors","zoneViewerPattern":"zone-{zone}-viewers"}
-      ZONIX_POWERDNS_BACKEND_NAME: powerdns-local
-      ZONIX_POWERDNS_API_URL: http://powerdns:8081
-      ZONIX_POWERDNS_API_KEY: zonix-dev-powerdns-key
-      ZONIX_POWERDNS_SERVER_ID: localhost
-      ZONIX_POWERDNS_TIMEOUT_SECONDS: 5
+    env_file:
+      - ./demo.env
     depends_on:
-      - postgres
-      - powerdns
-      - oidc-gateway
+      postgres:
+        condition: service_healthy
+      powerdns:
+        condition: service_started
+      oidc-gateway:
+        condition: service_healthy
     ports:
-      - "8000:8000"
+      - "${ZONIX_HOST_BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/ready', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
 
   frontend:
     build:
       context: ../frontend
-    environment:
-      ZONIX_DEV_PROXY_TARGET: http://backend:8000
+    env_file:
+      - ./demo.env
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
-      - "5173:5173"
+      - "${ZONIX_HOST_FRONTEND_PORT:-5173}:5173"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5173').then((response)=>{if(!response.ok) throw new Error(String(response.status));})",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
 volumes:
   postgres_data:

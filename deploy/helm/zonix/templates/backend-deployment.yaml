@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zonix.fullname" . }}-backend
+  labels:
+    {{- include "zonix.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "zonix.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "zonix.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: {{ include "zonix.serviceAccountName" . }}
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: {{ include "zonix.fullname" . }}-backend-config
+            - secretRef:
+                name: {{ include "zonix.fullname" . }}-backend-secret
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.backend.probes.readinessPath }}
+              port: http
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.backend.probes.livenessPath }}
+              port: http
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}

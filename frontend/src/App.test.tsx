@@ -9,8 +9,10 @@ import {
   deleteZoneRecord,
   discoverAdminBackendZones,
   fetchAuditEvents,
+  fetchSession,
   fetchZoneRecords,
   importAdminBackendZones,
+  logout,
   previewZoneChange,
   startOidcLogin,
 } from "./api";
@@ -44,6 +46,12 @@ vi.mock("./api", () => ({
     sessionTtlSeconds: 43200,
     bootstrapAdminEnabled: true,
   })),
+  hasCookie: vi.fn((name: string) =>
+    document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .some((part) => part.startsWith(`${name}=`)),
+  ),
   fetchSession: vi.fn(async () => ({ authenticated: false, user: null })),
   fetchOidcProviders: vi.fn(async () => ({
     items: [{ name: "corp-oidc", kind: "oidc" }],
@@ -314,6 +322,15 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: /zonix control plane/i })).toBeVisible();
     expect(await screen.findByRole("button", { name: /sign in with corp-oidc/i })).toBeVisible();
+  });
+
+  it("does not request the session endpoint without a session cookie", async () => {
+    renderApp();
+
+    expect(screen.getByRole("heading", { name: /zonix control plane/i })).toBeVisible();
+    await waitFor(() => {
+      expect(vi.mocked(fetchSession)).not.toHaveBeenCalled();
+    });
   });
 
   it("switches the shell copy to russian from the login surface", async () => {
@@ -721,6 +738,32 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.queryByText(/no audit events match the current filters/i)).not.toBeInTheDocument();
       expect(screen.getByText(/record.created/i)).toBeVisible();
+    });
+  });
+
+  it("does not refetch session after logout", async () => {
+    const fetchSessionMock = vi.mocked(fetchSession);
+
+    renderApp();
+
+    fireEvent.change(screen.getByLabelText(/username/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: "admin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    expect(await screen.findByRole("heading", { name: /zone inventory/i })).toBeVisible();
+
+    const callsBeforeLogout = fetchSessionMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
+
+    expect(await screen.findByRole("button", { name: /^sign in$/i })).toBeVisible();
+    await waitFor(() => {
+      expect(vi.mocked(logout)).toHaveBeenCalledTimes(1);
+      expect(fetchSessionMock.mock.calls.length).toBe(callsBeforeLogout);
+      expect(screen.getByLabelText(/password/i)).toHaveValue("");
     });
   });
 });

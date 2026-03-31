@@ -16,6 +16,14 @@ class AuditEventRepository(Protocol):
 
     def list_recent(self, limit: int = 100) -> tuple[AuditEvent, ...]: ...
 
+    def list_visible_for_user(
+        self,
+        *,
+        username: str,
+        zone_names: tuple[str, ...],
+        limit: int = 100,
+    ) -> tuple[AuditEvent, ...]: ...
+
 
 @dataclass
 class InMemoryAuditEventRepository:
@@ -32,6 +40,23 @@ class InMemoryAuditEventRepository:
         recent = sorted(self.events, key=lambda event: event.created_at, reverse=True)
         return tuple(recent[:limit])
 
+    def list_visible_for_user(
+        self,
+        *,
+        username: str,
+        zone_names: tuple[str, ...],
+        limit: int = 100,
+    ) -> tuple[AuditEvent, ...]:
+        visible_zone_names = set(zone_names)
+        recent = sorted(self.events, key=lambda event: event.created_at, reverse=True)
+        visible_events = [
+            event
+            for event in recent
+            if event.actor == username
+            or (event.zone_name is not None and event.zone_name in visible_zone_names)
+        ]
+        return tuple(visible_events[:limit])
+
 
 class DatabaseAuditEventRepository:
     def __init__(
@@ -47,7 +72,9 @@ class DatabaseAuditEventRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO audit_events (actor, action, zone_name, backend_name, payload, created_at)
+                    INSERT INTO audit_events (
+                        actor, action, zone_name, backend_name, payload, created_at
+                    )
                     VALUES (%s, %s, %s, %s, %s::jsonb, %s)
                     """,
                     (
@@ -76,16 +103,53 @@ class DatabaseAuditEventRepository:
                 )
                 rows = cursor.fetchall()
 
-        return tuple(
-            AuditEvent(
-                actor=str(row[0]),
-                action=str(row[1]),
-                zone_name=None if row[2] is None else str(row[2]),
-                backend_name=None if row[3] is None else str(row[3]),
-                payload={} if row[4] is None else dict(row[4]),
-                created_at=row[5].astimezone(UTC) if hasattr(row[5], "astimezone") else row[5],
-            )
-            for row in rows
+        return tuple(self._map_event(row) for row in rows)
+
+    def list_visible_for_user(
+        self,
+        *,
+        username: str,
+        zone_names: tuple[str, ...],
+        limit: int = 100,
+    ) -> tuple[AuditEvent, ...]:
+        with self.connect_fn(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                if zone_names:
+                    cursor.execute(
+                        """
+                        SELECT actor, action, zone_name, backend_name, payload, created_at
+                        FROM audit_events
+                        WHERE actor = %s
+                           OR zone_name = ANY(%s)
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT %s
+                        """,
+                        (username, list(zone_names), limit),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT actor, action, zone_name, backend_name, payload, created_at
+                        FROM audit_events
+                        WHERE actor = %s
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT %s
+                        """,
+                        (username, limit),
+                    )
+                rows = cursor.fetchall()
+
+        return tuple(self._map_event(row) for row in rows)
+
+    @staticmethod
+    def _map_event(row: tuple[object, ...]) -> AuditEvent:
+        return AuditEvent(
+            actor=str(row[0]),
+            action=str(row[1]),
+            zone_name=None if row[2] is None else str(row[2]),
+            backend_name=None if row[3] is None else str(row[3]),
+            payload={} if row[4] is None else dict(row[4]),
+            created_at=row[5].astimezone(UTC) if hasattr(row[5], "astimezone") else row[5],
         )
 
 
@@ -117,15 +181,14 @@ class AuditService:
         return self.repository.add(event)
 
     def list_events_for_user(self, user: User, limit: int = 100) -> tuple[AuditEvent, ...]:
-        events = self.repository.list_recent(limit=limit)
         if user.role == Role.ADMIN:
-            return events
+            return self.repository.list_recent(limit=limit)
 
-        accessible_zone_names = {zone.name for zone in self.access_service.list_accessible_zones(user)}
-        visible_events = [
-            event
-            for event in events
-            if event.actor == user.username
-            or (event.zone_name is not None and event.zone_name in accessible_zone_names)
-        ]
-        return tuple(visible_events)
+        accessible_zone_names = {
+            zone.name for zone in self.access_service.list_accessible_zones(user)
+        }
+        return self.repository.list_visible_for_user(
+            username=user.username,
+            zone_names=tuple(sorted(accessible_zone_names)),
+            limit=limit,
+        )

@@ -1,0 +1,35 @@
+{{- if .Values.frontend.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "zonix.fullname" . }}-frontend
+  labels:
+    {{- include "zonix.labels" . | nindent 4 }}
+  {{- with .Values.frontend.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.frontend.ingress.className }}
+  ingressClassName: {{ .Values.frontend.ingress.className }}
+  {{- end }}
+  rules:
+    {{- range .Values.frontend.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "zonix.fullname" $ }}-frontend
+                port:
+                  number: {{ $.Values.frontend.service.port }}
+          {{- end }}
+    {{- end }}
+  {{- with .Values.frontend.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

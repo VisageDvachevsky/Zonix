@@ -2,6 +2,20 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.domain.models import ChangeOperation, IdentityProviderKind, Role
 
+USERNAME_MAX_LENGTH = 64
+PASSWORD_MAX_LENGTH = 256
+TOKEN_NAME_MAX_LENGTH = 128
+BACKEND_NAME_MAX_LENGTH = 128
+ZONE_NAME_MAX_LENGTH = 255
+RECORD_NAME_MAX_LENGTH = 255
+RECORD_TYPE_MAX_LENGTH = 16
+RECORD_VALUE_MAX_LENGTH = 2048
+RECORD_VALUES_MAX_ITEMS = 20
+BULK_CHANGE_MAX_ITEMS = 100
+OIDC_ISSUER_MAX_LENGTH = 2048
+OIDC_CLIENT_ID_MAX_LENGTH = 255
+OIDC_CLIENT_SECRET_MAX_LENGTH = 2048
+
 
 class HealthResponse(BaseModel):
     status: str = Field(min_length=1)
@@ -20,17 +34,17 @@ class ReadinessResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
 
 
 class AuthenticatedUserResponse(BaseModel):
-    username: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
     role: Role
 
 
 class AdminUserResponse(BaseModel):
-    username: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
     role: Role
     auth_source: str = Field(min_length=1, alias="authSource")
     is_active: bool = Field(alias="isActive")
@@ -45,12 +59,12 @@ class AdminUserRoleRequest(BaseModel):
 
 
 class ServiceAccountRequest(BaseModel):
-    username: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
     role: Role
 
 
 class ServiceAccountResponse(BaseModel):
-    username: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
     role: Role
     auth_source: str = Field(min_length=1, alias="authSource")
     is_active: bool = Field(alias="isActive")
@@ -61,12 +75,12 @@ class ServiceAccountListResponse(BaseModel):
 
 
 class ApiTokenCreateRequest(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=TOKEN_NAME_MAX_LENGTH)
 
 
 class ApiTokenCreateResponse(BaseModel):
-    username: str = Field(min_length=1)
-    token_name: str = Field(min_length=1, alias="tokenName")
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
+    token_name: str = Field(min_length=1, max_length=TOKEN_NAME_MAX_LENGTH, alias="tokenName")
     token: str = Field(min_length=1)
 
 
@@ -89,7 +103,7 @@ class AuthSettingsResponse(BaseModel):
 
 
 class OIDCProviderResponse(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH)
     kind: IdentityProviderKind
 
 
@@ -98,17 +112,24 @@ class OIDCProviderListResponse(BaseModel):
 
 
 class OIDCLoginStartResponse(BaseModel):
-    provider_name: str = Field(min_length=1, alias="providerName")
+    provider_name: str = Field(
+        min_length=1, max_length=BACKEND_NAME_MAX_LENGTH, alias="providerName"
+    )
     authorization_url: str = Field(min_length=1, alias="authorizationUrl")
 
 
 class IdentityProviderConfigRequest(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH)
     kind: IdentityProviderKind
-    issuer: str = Field(min_length=1)
-    client_id: str = Field(min_length=1, alias="clientId")
-    client_secret: str | None = Field(default=None, min_length=1, alias="clientSecret")
-    scopes: tuple[str, ...] = Field(min_length=1)
+    issuer: str = Field(min_length=1, max_length=OIDC_ISSUER_MAX_LENGTH)
+    client_id: str = Field(min_length=1, max_length=OIDC_CLIENT_ID_MAX_LENGTH, alias="clientId")
+    client_secret: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=OIDC_CLIENT_SECRET_MAX_LENGTH,
+        alias="clientSecret",
+    )
+    scopes: tuple[str, ...] = Field(min_length=1, max_length=20)
     claims_mapping_rules: dict[str, object] = Field(
         default_factory=dict,
         alias="claimsMappingRules",
@@ -116,10 +137,10 @@ class IdentityProviderConfigRequest(BaseModel):
 
 
 class IdentityProviderConfigResponse(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH)
     kind: IdentityProviderKind
-    issuer: str = Field(min_length=1)
-    client_id: str = Field(min_length=1, alias="clientId")
+    issuer: str = Field(min_length=1, max_length=OIDC_ISSUER_MAX_LENGTH)
+    client_id: str = Field(min_length=1, max_length=OIDC_CLIENT_ID_MAX_LENGTH, alias="clientId")
     scopes: tuple[str, ...]
     has_client_secret: bool = Field(alias="hasClientSecret")
     claims_mapping_rules: dict[str, object] = Field(alias="claimsMappingRules")
@@ -130,9 +151,9 @@ class IdentityProviderConfigListResponse(BaseModel):
 
 
 class BackendResponse(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH)
     backend_type: str = Field(min_length=1, alias="backendType")
-    capabilities: tuple[str, ...]
+    capabilities: tuple[str, ...] = Field(max_length=16)
 
 
 class BackendListResponse(BaseModel):
@@ -140,9 +161,9 @@ class BackendListResponse(BaseModel):
 
 
 class BackendConfigRequest(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH)
     backend_type: str = Field(min_length=1, alias="backendType")
-    capabilities: tuple[str, ...] = Field(default=())
+    capabilities: tuple[str, ...] = Field(default=(), max_length=16)
 
 
 class BackendConfigListResponse(BaseModel):
@@ -150,8 +171,8 @@ class BackendConfigListResponse(BaseModel):
 
 
 class ZoneResponse(BaseModel):
-    name: str = Field(min_length=1)
-    backend_name: str = Field(min_length=1, alias="backendName")
+    name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH)
+    backend_name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH, alias="backendName")
 
 
 class ZoneListResponse(BaseModel):
@@ -159,11 +180,11 @@ class ZoneListResponse(BaseModel):
 
 
 class RecordSetResponse(BaseModel):
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    name: str = Field(min_length=1)
-    record_type: str = Field(min_length=1, alias="recordType")
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    name: str = Field(min_length=1, max_length=RECORD_NAME_MAX_LENGTH)
+    record_type: str = Field(min_length=1, max_length=RECORD_TYPE_MAX_LENGTH, alias="recordType")
     ttl: int = Field(gt=0)
-    values: tuple[str, ...]
+    values: tuple[str, ...] = Field(max_length=RECORD_VALUES_MAX_ITEMS)
     version: str = Field(min_length=1)
 
 
@@ -172,28 +193,28 @@ class RecordListResponse(BaseModel):
 
 
 class RecordSetRequest(BaseModel):
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    name: str = Field(min_length=1)
-    record_type: str = Field(min_length=1, alias="recordType")
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    name: str = Field(min_length=1, max_length=RECORD_NAME_MAX_LENGTH)
+    record_type: str = Field(min_length=1, max_length=RECORD_TYPE_MAX_LENGTH, alias="recordType")
     ttl: int = Field(gt=0)
-    values: tuple[str, ...] = Field(min_length=1)
+    values: tuple[str, ...] = Field(min_length=1, max_length=RECORD_VALUES_MAX_ITEMS)
     expected_version: str | None = Field(default=None, alias="expectedVersion")
 
 
 class RecordDeleteRequest(BaseModel):
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    name: str = Field(min_length=1)
-    record_type: str = Field(min_length=1, alias="recordType")
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    name: str = Field(min_length=1, max_length=RECORD_NAME_MAX_LENGTH)
+    record_type: str = Field(min_length=1, max_length=RECORD_TYPE_MAX_LENGTH, alias="recordType")
     expected_version: str | None = Field(default=None, alias="expectedVersion")
 
 
 class ChangePreviewRequest(BaseModel):
     operation: ChangeOperation
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    name: str = Field(min_length=1)
-    record_type: str = Field(min_length=1, alias="recordType")
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    name: str = Field(min_length=1, max_length=RECORD_NAME_MAX_LENGTH)
+    record_type: str = Field(min_length=1, max_length=RECORD_TYPE_MAX_LENGTH, alias="recordType")
     ttl: int | None = Field(default=None, gt=0)
-    values: tuple[str, ...] | None = None
+    values: tuple[str, ...] | None = Field(default=None, max_length=RECORD_VALUES_MAX_ITEMS)
     expected_version: str | None = Field(default=None, alias="expectedVersion")
 
     @model_validator(mode="after")
@@ -212,9 +233,9 @@ class ChangePreviewRequest(BaseModel):
 
 
 class ChangeSetResponse(BaseModel):
-    actor: str = Field(min_length=1)
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    backend_name: str = Field(min_length=1, alias="backendName")
+    actor: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    backend_name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH, alias="backendName")
     operation: ChangeOperation
     before: RecordSetResponse | None = None
     after: RecordSetResponse | None = None
@@ -227,14 +248,14 @@ class ChangeSetResponse(BaseModel):
 
 class BulkChangeItemRequest(BaseModel):
     operation: ChangeOperation
-    name: str = Field(min_length=1)
-    record_type: str = Field(min_length=1, alias="recordType")
+    name: str = Field(min_length=1, max_length=RECORD_NAME_MAX_LENGTH)
+    record_type: str = Field(min_length=1, max_length=RECORD_TYPE_MAX_LENGTH, alias="recordType")
     ttl: int | None = Field(default=None, gt=0)
-    values: tuple[str, ...] | None = None
+    values: tuple[str, ...] | None = Field(default=None, max_length=RECORD_VALUES_MAX_ITEMS)
     expected_version: str | None = Field(default=None, alias="expectedVersion")
 
     @model_validator(mode="after")
-    def validate_operation_shape(self) -> "BulkChangeItemRequest":
+    def validate_operation_shape(self) -> BulkChangeItemRequest:
         if self.operation in {ChangeOperation.CREATE, ChangeOperation.UPDATE}:
             if self.ttl is None:
                 raise ValueError("ttl is required for create/update bulk changes")
@@ -249,22 +270,26 @@ class BulkChangeItemRequest(BaseModel):
 
 
 class BulkChangeRequest(BaseModel):
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    items: tuple[BulkChangeItemRequest, ...] = Field(min_length=1)
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    items: tuple[BulkChangeItemRequest, ...] = Field(min_length=1, max_length=BULK_CHANGE_MAX_ITEMS)
 
 
 class BulkChangeResponse(BaseModel):
-    zone_name: str = Field(min_length=1, alias="zoneName")
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
     applied: bool
     has_conflicts: bool = Field(alias="hasConflicts")
     items: tuple[ChangeSetResponse, ...]
 
 
 class AuditEventResponse(BaseModel):
-    actor: str = Field(min_length=1)
+    actor: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
     action: str = Field(min_length=1)
-    zone_name: str | None = Field(default=None, alias="zoneName")
-    backend_name: str | None = Field(default=None, alias="backendName")
+    zone_name: str | None = Field(default=None, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    backend_name: str | None = Field(
+        default=None,
+        max_length=BACKEND_NAME_MAX_LENGTH,
+        alias="backendName",
+    )
     payload: dict[str, object]
     created_at: str = Field(min_length=1, alias="createdAt")
 
@@ -274,15 +299,15 @@ class AuditEventListResponse(BaseModel):
 
 
 class ZoneGrantRequest(BaseModel):
-    username: str = Field(min_length=1)
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    actions: tuple[str, ...] = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    actions: tuple[str, ...] = Field(min_length=1, max_length=8)
 
 
 class ZoneGrantResponse(BaseModel):
-    username: str = Field(min_length=1)
-    zone_name: str = Field(min_length=1, alias="zoneName")
-    actions: tuple[str, ...]
+    username: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
+    zone_name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH, alias="zoneName")
+    actions: tuple[str, ...] = Field(max_length=8)
 
 
 class ZoneGrantListResponse(BaseModel):
@@ -290,25 +315,25 @@ class ZoneGrantListResponse(BaseModel):
 
 
 class ZoneSyncResponse(BaseModel):
-    backend_name: str = Field(min_length=1, alias="backendName")
+    backend_name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH, alias="backendName")
     synced_zones: tuple[ZoneResponse, ...] = Field(alias="syncedZones")
 
 
 class DiscoveredZoneResponse(BaseModel):
-    name: str = Field(min_length=1)
-    backend_name: str = Field(min_length=1, alias="backendName")
+    name: str = Field(min_length=1, max_length=ZONE_NAME_MAX_LENGTH)
+    backend_name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH, alias="backendName")
     managed: bool
 
 
 class ZoneDiscoveryResponse(BaseModel):
-    backend_name: str = Field(min_length=1, alias="backendName")
+    backend_name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH, alias="backendName")
     items: tuple[DiscoveredZoneResponse, ...]
 
 
 class ZoneImportRequest(BaseModel):
-    zone_names: tuple[str, ...] | None = Field(default=None, alias="zoneNames")
+    zone_names: tuple[str, ...] | None = Field(default=None, alias="zoneNames", max_length=200)
 
 
 class ZoneImportResponse(BaseModel):
-    backend_name: str = Field(min_length=1, alias="backendName")
+    backend_name: str = Field(min_length=1, max_length=BACKEND_NAME_MAX_LENGTH, alias="backendName")
     imported_zones: tuple[ZoneResponse, ...] = Field(alias="importedZones")

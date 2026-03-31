@@ -3,9 +3,10 @@ from secrets import token_urlsafe
 from typing import Annotated
 from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.access import (
     AccessService,
@@ -13,8 +14,8 @@ from app.access import (
     DatabasePermissionGrantRepository,
     DatabaseZoneRepository,
 )
-from app.audit import AuditService, DatabaseAuditEventRepository
 from app.api_tokens import ApiTokenService, build_api_token_service_for_user_repository
+from app.audit import AuditService, DatabaseAuditEventRepository
 from app.auth import (
     AuthIdentityConflictError,
     AuthSelfSignupDisabledError,
@@ -36,9 +37,17 @@ from app.domain.models import (
     RecordSet,
     Role,
     User,
+    Zone,
     ZoneAction,
 )
+from app.http_security import (
+    LoginRateLimiter,
+    RequestBodyLimitMiddleware,
+    SecurityHeadersMiddleware,
+    client_ip_from_scope,
+)
 from app.identity_providers import DatabaseIdentityProviderRepository, IdentityProviderService
+from app.observability import MetricsRegistry, RequestObservabilityMiddleware
 from app.oidc import OIDCExchangeError, OIDCProviderNotFoundError, OIDCService, OIDCStateManager
 from app.record_writes import (
     RecordAlreadyExistsError,
@@ -82,17 +91,17 @@ from app.schemas import (
     OIDCProviderListResponse,
     OIDCProviderResponse,
     ReadinessResponse,
-    ServiceAccountListResponse,
-    ServiceAccountRequest,
-    ServiceAccountResponse,
     RecordDeleteRequest,
     RecordListResponse,
     RecordSetRequest,
     RecordSetResponse,
+    ServiceAccountListResponse,
+    ServiceAccountRequest,
+    ServiceAccountResponse,
+    ZoneDiscoveryResponse,
     ZoneGrantListResponse,
     ZoneGrantRequest,
     ZoneGrantResponse,
-    ZoneDiscoveryResponse,
     ZoneImportRequest,
     ZoneImportResponse,
     ZoneListResponse,
@@ -460,7 +469,11 @@ def get_current_user(
     api_token_service: ApiTokenServiceDependency,
 ) -> AuthenticatedUserResponse:
     authorization = request.headers.get("Authorization", "")
-    bearer_token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else None
+    bearer_token = (
+        authorization.removeprefix("Bearer ").strip()
+        if authorization.startswith("Bearer ")
+        else None
+    )
     user = api_token_service.authenticate(bearer_token)
     if user is None:
         session_token = request.cookies.get(settings.session_cookie_name)
@@ -482,7 +495,11 @@ def authenticated_user_from_request(
     api_token_service: ApiTokenService,
 ) -> User | None:
     authorization = request.headers.get("Authorization", "")
-    bearer_token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else None
+    bearer_token = (
+        authorization.removeprefix("Bearer ").strip()
+        if authorization.startswith("Bearer ")
+        else None
+    )
     user = api_token_service.authenticate(bearer_token)
     if user is not None:
         return user
@@ -567,15 +584,34 @@ def create_app(
         app.state.audit_service,
     )
     app.state.oidc_service = oidc_service or build_oidc_service(app.state.identity_provider_service)
+    app.state.metrics_registry = MetricsRegistry()
+    app.state.login_rate_limiter = LoginRateLimiter(
+        max_attempts=settings.login_rate_limit_attempts,
+        window_seconds=settings.login_rate_limit_window_seconds,
+    )
     app.state.using_default_runtime = using_default_runtime
     set_inventory_sync_state(app, status=None, error=None)
 
     app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=list(settings.allowed_hosts),
+    )
+    app.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_body_bytes=settings.request_max_body_bytes,
+    )
+    if settings.security_headers_enabled:
+        app.add_middleware(
+            SecurityHeadersMiddleware,
+            permissions_policy=settings.security_headers_permissions_policy,
+        )
+    app.middleware("http")(RequestObservabilityMiddleware(app.state.metrics_registry))
+    app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_web_origins),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Accept", "Authorization", "Content-Type", CSRF_HEADER_NAME],
     )
 
     @app.get("/health", response_model=HealthResponse)
@@ -604,15 +640,36 @@ def create_app(
             inventorySyncError=app.state.inventory_sync_error,
         )
 
+    @app.get("/metrics")
+    def metrics() -> Response:
+        return Response(
+            content=app.state.metrics_registry.render_prometheus(
+                app_name=settings.app_name,
+                app_version=settings.app_version,
+                environment=settings.environment,
+            ),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
     @app.post("/auth/login", response_model=AuthSessionResponse)
     def login(
+        request: Request,
         payload: LoginRequest,
         response: Response,
         auth_service: AuthServiceDependency,
         audit_service: AuditServiceDependency,
     ) -> AuthSessionResponse:
+        rate_limit_key = client_ip_from_scope(request.scope)
+        decision = request.app.state.login_rate_limiter.check(rate_limit_key)
+        if not decision.allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="too many login attempts",
+                headers={"Retry-After": str(decision.retry_after_seconds)},
+            )
         user = auth_service.authenticate_local_user(payload.username, payload.password)
         if user is None:
+            request.app.state.login_rate_limiter.record_failure(rate_limit_key)
             audit_service.log_event(
                 actor=payload.username,
                 action="login.failed",
@@ -623,6 +680,7 @@ def create_app(
                 detail="invalid credentials",
             )
 
+        request.app.state.login_rate_limiter.reset(rate_limit_key)
         session_token = auth_service.create_session(user)
         audit_service.log_event(
             actor=user.username,
@@ -810,7 +868,10 @@ def create_app(
             payload={"role": user.role.value, "authSource": f"oidc:{provider_name}"},
         )
         if return_to:
-            redirect_response = RedirectResponse(url=return_to, status_code=status.HTTP_303_SEE_OTHER)
+            redirect_response = RedirectResponse(
+                url=return_to,
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
             set_auth_cookies(redirect_response, session_token)
             return redirect_response
         csrf_token = set_auth_cookies(response, session_token)
@@ -1215,7 +1276,10 @@ def create_app(
         try:
             changes = bulk_record_change_from_request(zone_name, payload)
         except ValueError as error:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
 
         try:
             result = control_plane_service.apply_bulk_changes(
@@ -1377,7 +1441,7 @@ def create_app(
     def list_audit_events(
         current_user: CurrentUserDependency,
         audit_service: AuditServiceDependency,
-        limit: int = 100,
+        limit: int = Query(default=100, ge=1, le=500),
     ) -> AuditEventListResponse:
         events = audit_service.list_events_for_user(
             User(username=current_user.username, role=current_user.role),

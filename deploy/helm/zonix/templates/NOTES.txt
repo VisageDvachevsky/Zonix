@@ -1,0 +1,17 @@
+1. Set real image repositories before install:
+   frontend: {{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}
+   backend: {{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}
+
+2. Point backend dependencies at real services:
+   databaseUrl: {{ .Values.backend.secretEnv.databaseUrl }}
+   powerdnsApiUrl: {{ .Values.backend.env.powerdnsApiUrl }}
+   oidcBootstrapIssuer: {{ .Values.backend.env.oidcBootstrapIssuer }}
+
+3. Access Zonix:
+{{- if .Values.frontend.ingress.enabled }}
+   {{- range .Values.frontend.ingress.hosts }}
+   http{{ if $.Values.frontend.ingress.tls }}s{{ end }}://{{ .host }}
+   {{- end }}
+{{- else }}
+   kubectl port-forward svc/{{ include "zonix.fullname" . }}-frontend 5173:{{ .Values.frontend.service.port }}
+{{- end }}
